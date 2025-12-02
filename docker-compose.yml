@@ -1,7 +1,6 @@
 version: '3.8'
 
 services:
-  # The .NET API Service
   sessionmanager.api:
     image: sessionmanager-api
     build:
@@ -11,23 +10,20 @@ services:
       - "8080:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      # Overriding appsettings.json with Docker service names
       - ConnectionStrings__Redis=redis:6379
       - ConnectionStrings__Postgres=Host=postgres;Port=5432;Database=SessionDb;Username=postgres;Password=secure_password
-      - JwtSettings__Secret=very_long_secret_key_for_signing_at_least_32_chars
-      - AesSettings__Key=32_byte_long_random_string_base64
+      - JwtSettings__Secret=ThisIsASecretKeyForJwtTokenGenerationMustBeLongEnough
+      - AesSettings__Key=MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=
     depends_on:
       - redis
       - postgres
 
-  # Redis Service (Cache/Session Store)
   redis:
     image: redis:alpine
     ports:
       - "6379:6379"
     restart: always
 
-  # PostgreSQL Service (User Data)
   postgres:
     image: postgres:16-alpine
     environment:

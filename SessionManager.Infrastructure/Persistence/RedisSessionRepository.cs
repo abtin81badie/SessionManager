@@ -3,7 +3,7 @@ using System;
 using System.Text.Json;
 using System.Threading.Tasks;
 using SessionManager.Domain.Entities;
-using SessionManager.Application.Interfaces; // This requires the ProjectReference above
+using SessionManager.Application.Interfaces;
 
 namespace SessionManager.Infrastructure.Persistence
 {

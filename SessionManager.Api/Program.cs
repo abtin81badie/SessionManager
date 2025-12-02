@@ -1,4 +1,9 @@
+using Microsoft.EntityFrameworkCore;
+using SessionManager.Api.Middleware;
+using SessionManager.Application.Interfaces; // Needed for User Repo
+using SessionManager.Domain.Entities;        // Needed for User Entity
 using SessionManager.Infrastructure;
+using SessionManager.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,12 +27,21 @@ builder.Services.AddInfrastructure(builder.Configuration);
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-// Enable Swagger in all environments for easier testing
-app.UseSwagger();
-app.UseSwaggerUI();
+// AUTO-MIGRATION & SEEDING LOGIC
+await DbInitializer.InitializeAsync(app.Services);
 
-app.UseHttpsRedirection();
+// HTTP REQUEST PIPELINE
+
+// 1. Global Exception Handler
+app.UseMiddleware<ExceptionMiddleware>();
+
+// 2. Swagger
+app.UseSwagger();
+app.UseSwaggerUI(c =>
+{
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "SessionManager API V1");
+    c.RoutePrefix = string.Empty;
+});
 
 app.UseAuthorization();
 

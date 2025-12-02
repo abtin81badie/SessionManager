@@ -1,7 +1,9 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SessionManager.Application.Interfaces;
 using SessionManager.Infrastructure.Persistence;
+using SessionManager.Infrastructure.Services;
 using StackExchange.Redis;
 
 namespace SessionManager.Infrastructure
@@ -10,7 +12,9 @@ namespace SessionManager.Infrastructure
     {
         public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
         {
-            // 1. Redis Configuration
+            // ==========================================================
+            // 1. REDIS SETUP
+            // ==========================================================
             string redisConnectionString = configuration.GetConnectionString("Redis") ?? "localhost:6379";
 
             services.AddSingleton<IConnectionMultiplexer>(sp =>
@@ -20,9 +24,21 @@ namespace SessionManager.Infrastructure
                 return ConnectionMultiplexer.Connect(config);
             });
 
-            // 2. Register the Repository
-            // This line caused the error before because ISessionRepository wasn't visible
             services.AddScoped<ISessionRepository, RedisSessionRepository>();
+
+            // ==========================================================
+            // 2. POSTGRES & EF CORE SETUP
+            // ==========================================================
+            services.AddDbContext<PostgresDbContext>(options =>
+                options.UseNpgsql(configuration.GetConnectionString("Postgres")));
+
+            services.AddScoped<IUserRepository, PostgresUserRepository>();
+
+            // ==========================================================
+            // 3. SECURITY SERVICES SETUP
+            // ==========================================================
+            services.AddScoped<ICryptoService, AesCryptoService>();
+            services.AddScoped<ITokenService, JwtService>();
 
             return services;
         }
