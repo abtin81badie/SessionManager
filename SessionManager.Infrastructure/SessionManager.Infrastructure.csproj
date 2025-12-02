@@ -1,20 +1,21 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
 
-  <!-- This block triggers the Automatic Install -->
-  <ItemGroup>
-    <PackageReference Include="StackExchange.Redis" Version="2.7.10" />
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.0" />
-    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.3.1" />
-  </ItemGroup>
+	<ItemGroup>
+		<!-- Packages needed for Redis and JWT -->
+		<PackageReference Include="StackExchange.Redis" Version="2.7.10" />
+		<PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.0" />
+		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.3.1" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\SessionManager.Application\SessionManager.Application.csproj" />
-  </ItemGroup>
+	<ItemGroup>
+		<!-- THIS IS THE FIX: Linking Infrastructure to Application -->
+		<ProjectReference Include="..\SessionManager.Application\SessionManager.Application.csproj" />
+	</ItemGroup>
 
 </Project>

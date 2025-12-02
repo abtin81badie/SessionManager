@@ -29,7 +29,7 @@ services:
 
   # PostgreSQL Service (User Data)
   postgres:
-    image: postgres:latest
+    image: postgres:16-alpine
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=secure_password
