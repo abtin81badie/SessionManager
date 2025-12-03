@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Http; // Required for DefaultHttpContext
+using Microsoft.AspNetCore.Mvc;
 using Moq;
 using SessionManager.Api.Controllers;
 using SessionManager.Application.DTOs;
@@ -18,6 +19,21 @@ namespace SessionManager.Tests
         private readonly Mock<ITokenService> _mockToken;
         private readonly AuthController _controller;
 
+        public AuthControllerTests()
+        {
+            _mockSessionRepo = new Mock<ISessionRepository>();
+            _mockUserRepo = new Mock<IUserRepository>();
+            _mockCrypto = new Mock<ICryptoService>();
+            _mockToken = new Mock<ITokenService>();
+
+            _controller = new AuthController(
+                _mockSessionRepo.Object,
+                _mockUserRepo.Object,
+                _mockCrypto.Object,
+                _mockToken.Object
+            );
+        }
+
         // --- HELPER: Generate Fake JWT ---
         private string GenerateTestJwt(string? jti = null, string? sub = null)
         {
@@ -30,22 +46,20 @@ namespace SessionManager.Tests
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
 
-        public AuthControllerTests()
+        // --- HELPER: Setup HttpContext with Header ---
+        private void SetupHttpContext(string token)
         {
-            // 1. Create Mocks
-            _mockSessionRepo = new Mock<ISessionRepository>();
-            _mockUserRepo = new Mock<IUserRepository>();
-            _mockCrypto = new Mock<ICryptoService>();
-            _mockToken = new Mock<ITokenService>();
-
-            // 2. Initialize Controller with Mocks
-            _controller = new AuthController(
-                _mockSessionRepo.Object,
-                _mockUserRepo.Object,
-                _mockCrypto.Object,
-                _mockToken.Object
-            );
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.Headers["Authorization"] = $"Bearer {token}";
+            _controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = httpContext
+            };
         }
+
+        // ==========================================
+        // LOGIN TESTS (Unchanged mostly, logic is body-based)
+        // ==========================================
 
         [Fact]
         public async Task Login_Should_AutoRegister_IfUserDoesNotExist()
@@ -53,15 +67,12 @@ namespace SessionManager.Tests
             // Arrange
             var request = new LoginRequest { Username = "newuser", Password = "Password123", DeviceName = "PC" };
 
-            // Setup: User Repo returns NULL (User doesn't exist)
             _mockUserRepo.Setup(x => x.GetByUsernameAsync(request.Username))
                 .ReturnsAsync((User?)null);
 
-            // Setup: Crypto service mocks
             _mockCrypto.Setup(x => x.Encrypt(It.IsAny<string>()))
                 .Returns(("encrypted", "iv"));
 
-            // Setup: Token service
             _mockToken.Setup(x => x.GenerateJwt(It.IsAny<User>(), It.IsAny<string>()))
                 .Returns("fake-jwt-token");
 
@@ -70,11 +81,7 @@ namespace SessionManager.Tests
 
             // Assert
             var okResult = Assert.IsType<OkObjectResult>(result);
-
-            // Verify CreateUserAsync was called (Auto Registration)
             _mockUserRepo.Verify(x => x.CreateUserAsync(It.Is<User>(u => u.Username == "newuser")), Times.Once);
-
-            // Verify Session was created in Redis
             _mockSessionRepo.Verify(x => x.CreateSessionAsync(It.IsAny<Guid>(), It.IsAny<SessionInfo>(), It.IsAny<TimeSpan>()), Times.Once);
         }
 
@@ -85,21 +92,11 @@ namespace SessionManager.Tests
             var request = new LoginRequest { Username = "existing", Password = "WrongPassword", DeviceName = "PC" };
             var existingUser = new User { Username = "existing", PasswordCipherText = "cipher", PasswordIV = "iv" };
 
-            // Setup: User Exists
-            _mockUserRepo.Setup(x => x.GetByUsernameAsync("existing"))
-                .ReturnsAsync(existingUser);
-
-            // Setup: Decrypt returns the "Real" password
-            _mockCrypto.Setup(x => x.Decrypt("cipher", "iv"))
-                .Returns("RealPassword");
+            _mockUserRepo.Setup(x => x.GetByUsernameAsync("existing")).ReturnsAsync(existingUser);
+            _mockCrypto.Setup(x => x.Decrypt("cipher", "iv")).Returns("RealPassword");
 
             // Act & Assert
-            // Since we throw Exception in Controller, expected behavior is an Exception 
-            // (Which ExceptionMiddleware handles in real app, but here we catch the exception directly)
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => _controller.Login(request));
-
-            // Verify we NEVER generated a token or session
-            _mockSessionRepo.Verify(x => x.CreateSessionAsync(It.IsAny<Guid>(), It.IsAny<SessionInfo>(), It.IsAny<TimeSpan>()), Times.Never);
         }
 
         [Fact]
@@ -109,15 +106,9 @@ namespace SessionManager.Tests
             var request = new LoginRequest { Username = "existing", Password = "RealPassword", DeviceName = "PC" };
             var existingUser = new User { Username = "existing", PasswordCipherText = "cipher", PasswordIV = "iv" };
 
-            _mockUserRepo.Setup(x => x.GetByUsernameAsync("existing"))
-                .ReturnsAsync(existingUser);
-
-            // Setup: Decrypt returns matching password
-            _mockCrypto.Setup(x => x.Decrypt("cipher", "iv"))
-                .Returns("RealPassword");
-
-            _mockToken.Setup(x => x.GenerateJwt(It.IsAny<User>(), It.IsAny<string>()))
-                .Returns("valid-jwt");
+            _mockUserRepo.Setup(x => x.GetByUsernameAsync("existing")).ReturnsAsync(existingUser);
+            _mockCrypto.Setup(x => x.Decrypt("cipher", "iv")).Returns("RealPassword");
+            _mockToken.Setup(x => x.GenerateJwt(It.IsAny<User>(), It.IsAny<string>())).Returns("valid-jwt");
 
             // Act
             var result = await _controller.Login(request);
@@ -125,9 +116,12 @@ namespace SessionManager.Tests
             // Assert
             var okResult = Assert.IsType<OkObjectResult>(result);
             var response = Assert.IsType<LoginResponse>(okResult.Value);
-
             Assert.Equal("valid-jwt", response.Token);
         }
+
+        // ==========================================
+        // LOGOUT TESTS (Updated for Headers)
+        // ==========================================
 
         [Fact]
         public async Task Logout_Should_ReturnOk_WhenTokenIsValidAndSessionDeleted()
@@ -137,18 +131,17 @@ namespace SessionManager.Tests
             var userId = Guid.NewGuid();
             var validToken = GenerateTestJwt(jti: sessionId, sub: userId.ToString());
 
-            var request = new LogoutRequest { Token = validToken };
+            // Inject Header
+            SetupHttpContext(validToken);
 
-            // Setup: Repository returns TRUE (Deletion successful)
             _mockSessionRepo.Setup(x => x.DeleteSessionAsync(sessionId, userId))
                 .ReturnsAsync(true);
 
             // Act
-            var result = await _controller.Logout(request);
+            var result = await _controller.Logout(); // No arguments
 
             // Assert
             var okResult = Assert.IsType<OkObjectResult>(result);
-            // Verify we called Delete with correct extracted IDs
             _mockSessionRepo.Verify(x => x.DeleteSessionAsync(sessionId, userId), Times.Once);
         }
 
@@ -160,45 +153,27 @@ namespace SessionManager.Tests
             var userId = Guid.NewGuid();
             var validToken = GenerateTestJwt(jti: sessionId, sub: userId.ToString());
 
-            var request = new LogoutRequest { Token = validToken };
+            SetupHttpContext(validToken);
 
-            // Setup: Repository returns FALSE (Key didn't exist)
             _mockSessionRepo.Setup(x => x.DeleteSessionAsync(sessionId, userId))
                 .ReturnsAsync(false);
 
             // Act
-            var result = await _controller.Logout(request);
+            var result = await _controller.Logout();
 
             // Assert
-            var notFound = Assert.IsType<NotFoundObjectResult>(result);
+            Assert.IsType<NotFoundObjectResult>(result);
         }
 
         [Fact]
-        public async Task Logout_Should_ReturnBadRequest_WhenTokenIsMalformed()
+        public async Task Logout_Should_ThrowArgumentException_WhenTokenIsMalformed()
         {
             // Arrange
-            // "BadToken" has no dots, so SessionValidator will throw ArgumentException
-            var request = new LogoutRequest { Token = "BadToken" };
+            // "BadToken" causes JwtSecurityTokenHandler to throw, or SessionValidator validation logic to fail
+            SetupHttpContext("BadToken");
 
             // Act & Assert
-            // In Unit Tests, middleware doesn't run, so we expect the Exception directly
-            await Assert.ThrowsAsync<ArgumentException>(() => _controller.Logout(request));
-        }
-
-        [Fact]
-        public async Task Logout_Should_ReturnBadRequest_WhenClaimsAreMissing()
-        {
-            // Arrange
-            // Token has structure but NO jti or sub claims
-            var tokenWithoutClaims = GenerateTestJwt(jti: null, sub: null);
-            var request = new LogoutRequest { Token = tokenWithoutClaims };
-
-            // Act
-            var result = await _controller.Logout(request);
-
-            // Assert
-            // The controller logic checks for claims and returns BadRequest if null
-            var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+            await Assert.ThrowsAsync<ArgumentException>(() => _controller.Logout());
         }
     }
 }

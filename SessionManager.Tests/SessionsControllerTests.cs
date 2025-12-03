@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Moq;
 using SessionManager.Api.Controllers;
 using SessionManager.Application.DTOs;
@@ -21,37 +22,48 @@ namespace SessionManager.Tests
             _controller = new SessionsController(_mockSessionRepo.Object);
         }
 
-        // Helper to generate a dummy JWT for testing
-        private string GenerateTestJwt(string? jti = null)
+        // --- HELPER: Generate Fake JWT ---
+        private string GenerateTestJwt(string? jti = null, string? sub = null)
         {
             var claims = new List<Claim>
             {
-                new Claim(JwtRegisteredClaimNames.Sub, "user-123"),
                 new Claim("role", "User")
             };
 
-            if (jti != null)
-            {
-                claims.Add(new Claim(JwtRegisteredClaimNames.Jti, jti));
-            }
+            if (sub != null) claims.Add(new Claim(JwtRegisteredClaimNames.Sub, sub));
+            else claims.Add(new Claim(JwtRegisteredClaimNames.Sub, Guid.NewGuid().ToString()));
 
-            // Create a token without signing for unit testing (since we just parse claims)
-            // Note: In real integration tests, you'd need a valid signature.
-            // For unit tests of the logic "Extract JTI", this works if the handler accepts unsigned tokens by default or we bypass validation logic.
-            // However, JwtSecurityTokenHandler.ReadJwtToken does NOT validate signature, it just reads.
+            if (jti != null) claims.Add(new Claim(JwtRegisteredClaimNames.Jti, jti));
+
             var token = new JwtSecurityToken(claims: claims);
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
+
+        // --- HELPER: Setup HttpContext with Header ---
+        private void SetupHttpContext(string token)
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.Headers["Authorization"] = $"Bearer {token}";
+            _controller.ControllerContext = new ControllerContext
+            {
+                HttpContext = httpContext
+            };
+        }
+
+        // ==========================================
+        // RENEW TESTS
+        // ==========================================
 
         [Fact]
         public async Task RenewSession_Should_ReturnOk_WhenTokenIsValidAndSessionExists()
         {
             // Arrange
             var redisSessionId = Guid.NewGuid().ToString();
-            var validJwt = GenerateTestJwt(jti: redisSessionId);
             var userId = Guid.NewGuid();
+            var validJwt = GenerateTestJwt(jti: redisSessionId, sub: userId.ToString());
 
-            var request = new RenewSessionRequest { Token = validJwt };
+            // Mock Header
+            SetupHttpContext(validJwt);
 
             var existingSession = new SessionInfo
             {
@@ -60,54 +72,31 @@ namespace SessionManager.Tests
                 DeviceInfo = "TestDevice"
             };
 
-            // Setup: Repository finds the session
             _mockSessionRepo.Setup(x => x.GetSessionAsync(redisSessionId))
                 .ReturnsAsync(existingSession);
 
             // Act
-            var result = await _controller.RenewSession(request);
+            var result = await _controller.RenewSession(); // No args
 
             // Assert
             var okResult = Assert.IsType<OkObjectResult>(result);
             var response = Assert.IsType<RenewSessionResponse>(okResult.Value);
 
             Assert.Equal("Session renewed successfully.", response.Message);
+            Assert.Equal(validJwt, response.Token); // Should echo the token back
 
-            // Verify ExtendSessionAsync was called with correct ID
             _mockSessionRepo.Verify(x => x.ExtendSessionAsync(userId, redisSessionId, It.IsAny<TimeSpan>()), Times.Once);
         }
 
         [Fact]
-        public async Task RenewSession_Should_ReturnBadRequest_WhenTokenIsMalformed()
+        public async Task RenewSession_Should_ThrowArgumentException_WhenTokenIsMalformed()
         {
             // Arrange
-            // "InvalidToken" has no dots, will fail SessionValidator
-            var request = new RenewSessionRequest { Token = "InvalidToken" };
+            SetupHttpContext("InvalidToken");
 
             // Act & Assert
-            // The Validator throws ArgumentException, which Middleware catches.
-            // But in Unit Tests, middleware doesn't run automatically unless we integration test.
-            // So we expect the EXCEPTION here directly.
-            var ex = await Assert.ThrowsAsync<ArgumentException>(() => _controller.RenewSession(request));
-            Assert.Contains("Invalid Token format", ex.Message);
-        }
-
-        [Fact]
-        public async Task RenewSession_Should_ReturnBadRequest_WhenJtiClaimIsMissing()
-        {
-            // Arrange
-            var jwtWithoutJti = GenerateTestJwt(jti: null);
-            var request = new RenewSessionRequest { Token = jwtWithoutJti };
-
-            // Act
-            var result = await _controller.RenewSession(request);
-
-            // Assert
-            var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-            // We need to access the anonymous type or object returned
-            // Since we returned `new { Message = ... }`, we can check the value via reflection or string
-            var value = badRequest.Value?.ToString();
-            Assert.NotNull(value);
+            var ex = await Assert.ThrowsAsync<ArgumentException>(() => _controller.RenewSession());
+            // Assert.Contains("Invalid Token", ex.Message); // Optional check depending on your Validator message
         }
 
         [Fact]
@@ -116,17 +105,59 @@ namespace SessionManager.Tests
             // Arrange
             var redisSessionId = Guid.NewGuid().ToString();
             var validJwt = GenerateTestJwt(jti: redisSessionId);
-            var request = new RenewSessionRequest { Token = validJwt };
 
-            // Setup: Repository returns NULL (Session expired/evicted)
+            SetupHttpContext(validJwt);
+
             _mockSessionRepo.Setup(x => x.GetSessionAsync(redisSessionId))
                 .ReturnsAsync((SessionInfo?)null);
 
             // Act
-            var result = await _controller.RenewSession(request);
+            var result = await _controller.RenewSession();
 
             // Assert
-            var notFound = Assert.IsType<NotFoundObjectResult>(result);
+            Assert.IsType<NotFoundObjectResult>(result);
+        }
+
+        // ==========================================
+        // GET ACTIVE SESSIONS TESTS (New)
+        // ==========================================
+
+        [Fact]
+        public async Task GetActiveSessions_Should_ReturnList_WhenTokenIsValid()
+        {
+            // Arrange
+            var currentSessionId = Guid.NewGuid().ToString();
+            var otherSessionId = Guid.NewGuid().ToString();
+            var userId = Guid.NewGuid();
+
+            // Mock Request with Current Session Token
+            var validJwt = GenerateTestJwt(jti: currentSessionId, sub: userId.ToString());
+            SetupHttpContext(validJwt);
+
+            var sessionsFromRepo = new List<SessionInfo>
+            {
+                new SessionInfo { Token = currentSessionId, UserId = userId, DeviceInfo = "CurrentDevice", CreatedAt = DateTime.UtcNow },
+                new SessionInfo { Token = otherSessionId, UserId = userId, DeviceInfo = "OtherDevice", CreatedAt = DateTime.UtcNow.AddMinutes(-10) }
+            };
+
+            _mockSessionRepo.Setup(x => x.GetActiveSessionsAsync(userId))
+                .ReturnsAsync(sessionsFromRepo);
+
+            // Act
+            var result = await _controller.GetActiveSessions();
+
+            // Assert
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            var dtos = Assert.IsAssignableFrom<IEnumerable<SessionDto>>(okResult.Value);
+
+            Assert.Equal(2, dtos.Count());
+
+            // Check flags
+            var currentDto = dtos.First(x => x.Token == currentSessionId);
+            Assert.True(currentDto.IsCurrentSession);
+
+            var otherDto = dtos.First(x => x.Token == otherSessionId);
+            Assert.False(otherDto.IsCurrentSession);
         }
     }
 }

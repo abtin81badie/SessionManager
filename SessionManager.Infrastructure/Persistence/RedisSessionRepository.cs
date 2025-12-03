@@ -123,5 +123,41 @@ namespace SessionManager.Infrastructure.Persistence
 
             await _db.ScriptEvaluateAsync(RenewSessionScript, keys, values);
         }
+
+        public async Task<IEnumerable<SessionInfo>> GetActiveSessionsAsync(Guid userId)
+        {
+            var userSessionKey = $"user_sessions:{userId}";
+
+            // 1. Get all tokens from ZSET (Sorted by Score)
+            var tokens = await _db.SortedSetRangeByRankAsync(userSessionKey);
+
+            if (tokens.Length == 0)
+                return Enumerable.Empty<SessionInfo>();
+
+            var sessions = new List<SessionInfo>();
+
+            // 2. Fetch details for each token
+            // Optimization: We could use StringGetAsync(RedisKey[]) for a batch get,
+            // but loop is simpler for now.
+            foreach (var token in tokens)
+            {
+                var data = await _db.StringGetAsync($"session:{token}");
+                if (!data.IsNullOrEmpty)
+                {
+                    var session = JsonSerializer.Deserialize<SessionInfo>(data!);
+                    if (session != null)
+                    {
+                        sessions.Add(session);
+                    }
+                }
+                else
+                {
+                    // Cleanup: If ZSET has token but String is gone (expired), remove from ZSET
+                    await _db.SortedSetRemoveAsync(userSessionKey, token);
+                }
+            }
+
+            return sessions;
+        }
     }
 }

@@ -4,13 +4,24 @@
 		<TargetFramework>net8.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
+		<!-- Enables the XML file generation for Swagger descriptions -->
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
-		<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		<!-- Suppress warning CS1591 (Missing XML comment for publicly visible type or member) -->
 		<NoWarn>$(NoWarn);1591</NoWarn>
 	</PropertyGroup>
 
 	<ItemGroup>
+		<!-- Swagger -->
 		<PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+
+		<!-- Authentication (Required for Program.cs logic) -->
+		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
+
+		<!-- EF Core Design (Required for Migration commands) -->
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.0">
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+			<PrivateAssets>all</PrivateAssets>
+		</PackageReference>
 	</ItemGroup>
 
 	<ItemGroup>

@@ -15,5 +15,7 @@ namespace SessionManager.Application.Interfaces
 
         // Method for renew
         Task ExtendSessionAsync(Guid userId, string token, TimeSpan ttl);
+        // Get all active sessions for a user
+        Task<IEnumerable<SessionInfo>> GetActiveSessionsAsync(Guid userId);
     }
 }
