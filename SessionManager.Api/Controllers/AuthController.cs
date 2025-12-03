@@ -5,6 +5,7 @@ using SessionManager.Api.Middleware;
 using SessionManager.Application.DTOs;
 using SessionManager.Application.Interfaces;
 using SessionManager.Domain.Entities;
+using System.IdentityModel.Tokens.Jwt;
 
 namespace SessionManager.Api.Controllers
 {
@@ -143,6 +144,74 @@ namespace SessionManager.Api.Controllers
             };
 
             return Ok(response);
+        }
+
+        /// <summary>
+        /// Logs out a user by invalidating their specific session token.
+        /// </summary>
+        /// <remarks>
+        /// Removes the session data from Redis. If the token is already invalid or expired, returns 404.
+        /// </remarks>
+        /// <param name="request">The JWT Token to revoke.</param>
+        /// <returns>Success message.</returns>
+        /// <response code="200">Session successfully deleted.</response>
+        /// <response code="400">Invalid Token format.</response>
+        /// <response code="404">Session not found (Already logged out or expired).</response>
+        [HttpDelete("logout")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)] // Added 404
+        public async Task<IActionResult> Logout([FromBody] LogoutRequest request)
+        {
+            // 1. Validate Format
+            LogoutValidator.ValidateLogout(request);
+
+            string redisSessionToken;
+            Guid userId;
+
+            // 2. Parse JWT
+            try
+            {
+                var handler = new JwtSecurityTokenHandler();
+                var jwtToken = handler.ReadJwtToken(request.Token);
+
+                var jtiClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Jti);
+                var subClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub);
+
+                if (jtiClaim == null || subClaim == null)
+                {
+                    return BadRequest(new { Message = "Invalid Token: Missing Session ID (jti) or User ID (sub)." });
+                }
+
+                redisSessionToken = jtiClaim.Value;
+                if (!Guid.TryParse(subClaim.Value, out userId))
+                {
+                    return BadRequest(new { Message = "Invalid Token: User ID is not a valid GUID." });
+                }
+            }
+            catch (Exception)
+            {
+                return BadRequest(new { Message = "Invalid Token format. Could not parse JWT." });
+            }
+
+            // 3. Delete from Redis AND Check Result
+            bool wasDeleted = await _sessionRepository.DeleteSessionAsync(redisSessionToken, userId);
+
+            if (!wasDeleted)
+            {
+                // If false, it means the key didn't exist in Redis
+                return NotFound(new { Message = "Session not found or already logged out." });
+            }
+
+            // 4. Success Response
+            return Ok(new
+            {
+                Message = "Logged out successfully.",
+                Links = new List<Link>
+                {
+                    new Link("login", "/api/auth/login", "POST")
+                }
+            });
         }
     }
 }

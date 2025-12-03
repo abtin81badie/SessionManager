@@ -85,15 +85,28 @@ namespace SessionManager.Infrastructure.Persistence
             return JsonSerializer.Deserialize<SessionInfo>(data!);
         }
 
-        public async Task DeleteSessionAsync(string token, Guid userId)
+        public async Task<bool> DeleteSessionAsync(string token, Guid userId)
         {
             var userSessionKey = $"user_sessions:{userId}";
             var sessionDataKey = $"session:{token}";
 
             var tran = _db.CreateTransaction();
-            _ = tran.KeyDeleteAsync(sessionDataKey);
-            _ = tran.SortedSetRemoveAsync(userSessionKey, token);
-            await tran.ExecuteAsync();
+            // We capture the task to check result later, or use KeyDeleteAsync directly
+            // For transactional integrity, we can't easily get the result of KeyDelete inside the transaction immediately.
+            // HOWEVER, simpler approach: If KeyDelete returns false, session didn't exist.
+
+            // Optimized logic:
+            // 1. Try to delete the main session key.
+            bool wasDeleted = await _db.KeyDeleteAsync(sessionDataKey);
+
+            if (wasDeleted)
+            {
+                // 2. Only if successful, remove from the User's index
+                await _db.SortedSetRemoveAsync(userSessionKey, token);
+                return true;
+            }
+
+            return false;
         }
 
         public async Task ExtendSessionAsync(Guid userId, string token, TimeSpan ttl)

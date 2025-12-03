@@ -11,7 +11,7 @@ namespace SessionManager.Application.Interfaces
         Task<SessionInfo?> GetSessionAsync(string token);
 
         // Removes a specific session (Logout)
-        Task DeleteSessionAsync(string token, Guid userId);
+        Task<bool> DeleteSessionAsync(string token, Guid userId);
 
         // Method for renew
         Task ExtendSessionAsync(Guid userId, string token, TimeSpan ttl);

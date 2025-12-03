@@ -4,6 +4,8 @@ using SessionManager.Api.Controllers;
 using SessionManager.Application.DTOs;
 using SessionManager.Application.Interfaces;
 using SessionManager.Domain.Entities;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using Xunit;
 
 namespace SessionManager.Tests
@@ -15,6 +17,18 @@ namespace SessionManager.Tests
         private readonly Mock<ICryptoService> _mockCrypto;
         private readonly Mock<ITokenService> _mockToken;
         private readonly AuthController _controller;
+
+        // --- HELPER: Generate Fake JWT ---
+        private string GenerateTestJwt(string? jti = null, string? sub = null)
+        {
+            var claims = new List<Claim> { new Claim("role", "User") };
+
+            if (jti != null) claims.Add(new Claim(JwtRegisteredClaimNames.Jti, jti));
+            if (sub != null) claims.Add(new Claim(JwtRegisteredClaimNames.Sub, sub));
+
+            var token = new JwtSecurityToken(claims: claims);
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
 
         public AuthControllerTests()
         {
@@ -113,6 +127,78 @@ namespace SessionManager.Tests
             var response = Assert.IsType<LoginResponse>(okResult.Value);
 
             Assert.Equal("valid-jwt", response.Token);
+        }
+
+        [Fact]
+        public async Task Logout_Should_ReturnOk_WhenTokenIsValidAndSessionDeleted()
+        {
+            // Arrange
+            var sessionId = Guid.NewGuid().ToString();
+            var userId = Guid.NewGuid();
+            var validToken = GenerateTestJwt(jti: sessionId, sub: userId.ToString());
+
+            var request = new LogoutRequest { Token = validToken };
+
+            // Setup: Repository returns TRUE (Deletion successful)
+            _mockSessionRepo.Setup(x => x.DeleteSessionAsync(sessionId, userId))
+                .ReturnsAsync(true);
+
+            // Act
+            var result = await _controller.Logout(request);
+
+            // Assert
+            var okResult = Assert.IsType<OkObjectResult>(result);
+            // Verify we called Delete with correct extracted IDs
+            _mockSessionRepo.Verify(x => x.DeleteSessionAsync(sessionId, userId), Times.Once);
+        }
+
+        [Fact]
+        public async Task Logout_Should_ReturnNotFound_WhenSessionAlreadyDeleted()
+        {
+            // Arrange
+            var sessionId = Guid.NewGuid().ToString();
+            var userId = Guid.NewGuid();
+            var validToken = GenerateTestJwt(jti: sessionId, sub: userId.ToString());
+
+            var request = new LogoutRequest { Token = validToken };
+
+            // Setup: Repository returns FALSE (Key didn't exist)
+            _mockSessionRepo.Setup(x => x.DeleteSessionAsync(sessionId, userId))
+                .ReturnsAsync(false);
+
+            // Act
+            var result = await _controller.Logout(request);
+
+            // Assert
+            var notFound = Assert.IsType<NotFoundObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task Logout_Should_ReturnBadRequest_WhenTokenIsMalformed()
+        {
+            // Arrange
+            // "BadToken" has no dots, so SessionValidator will throw ArgumentException
+            var request = new LogoutRequest { Token = "BadToken" };
+
+            // Act & Assert
+            // In Unit Tests, middleware doesn't run, so we expect the Exception directly
+            await Assert.ThrowsAsync<ArgumentException>(() => _controller.Logout(request));
+        }
+
+        [Fact]
+        public async Task Logout_Should_ReturnBadRequest_WhenClaimsAreMissing()
+        {
+            // Arrange
+            // Token has structure but NO jti or sub claims
+            var tokenWithoutClaims = GenerateTestJwt(jti: null, sub: null);
+            var request = new LogoutRequest { Token = tokenWithoutClaims };
+
+            // Act
+            var result = await _controller.Logout(request);
+
+            // Assert
+            // The controller logic checks for claims and returns BadRequest if null
+            var badRequest = Assert.IsType<BadRequestObjectResult>(result);
         }
     }
 }
