@@ -17,6 +17,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		Dockerfile = Dockerfile
 	EndProjectSection
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SessionManager.Tests", "SessionManager.Tests\SessionManager.Tests.csproj", "{6CD05197-2F48-4882-A561-0D1CB7DFDC9B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,6 +41,10 @@ Global
 		{D4B6FC59-A850-4388-B0B7-E346A19B74FE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D4B6FC59-A850-4388-B0B7-E346A19B74FE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D4B6FC59-A850-4388-B0B7-E346A19B74FE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6CD05197-2F48-4882-A561-0D1CB7DFDC9B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6CD05197-2F48-4882-A561-0D1CB7DFDC9B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6CD05197-2F48-4882-A561-0D1CB7DFDC9B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6CD05197-2F48-4882-A561-0D1CB7DFDC9B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
