@@ -1,4 +1,5 @@
-﻿using SessionManager.Application.Interfaces;
+﻿using SessionManager.Application.DTOs;
+using SessionManager.Application.Interfaces;
 using SessionManager.Domain.Entities;
 using StackExchange.Redis;
 using System.Text.Json;
@@ -158,6 +159,48 @@ namespace SessionManager.Infrastructure.Persistence
             }
 
             return sessions;
+        }
+        public async Task<SessionStatsDto> GetSessionStatsAsync(Guid? userId)
+        {
+            if (userId.HasValue)
+            {
+                // USER REPORT: Just check their own ZSET
+                var userSessionKey = $"user_sessions:{userId}";
+                var count = await _db.SortedSetLengthAsync(userSessionKey);
+
+                return new SessionStatsDto
+                {
+                    TotalActiveSessions = (int)count,
+                    UsersOnline = count > 0 ? 1 : 0
+                };
+            }
+            else
+            {
+                // ADMIN REPORT: Global Scan
+                // Note: In production, avoid Keys(). Use a dedicated counter or SCAN.
+                // For this implementation, we will use the Server command to scan keys.
+                var server = _redis.GetServer(_redis.GetEndPoints().First());
+
+                // Pattern to match all user session indexes
+                var pattern = "user_sessions:*";
+                int totalSessions = 0;
+                int usersOnline = 0;
+
+                // This iterates using SCAN internally (safe for production compared to KEYS)
+                await foreach (var key in server.KeysAsync(pattern: pattern))
+                {
+                    usersOnline++;
+                    // Count sessions in this user's ZSET
+                    var userSessionCount = await _db.SortedSetLengthAsync(key);
+                    totalSessions += (int)userSessionCount;
+                }
+
+                return new SessionStatsDto
+                {
+                    TotalActiveSessions = totalSessions,
+                    UsersOnline = usersOnline
+                };
+            }
         }
     }
 }

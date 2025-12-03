@@ -1,4 +1,5 @@
-﻿using SessionManager.Domain.Entities;
+﻿using SessionManager.Application.DTOs;
+using SessionManager.Domain.Entities;
 
 namespace SessionManager.Application.Interfaces
 {
@@ -17,5 +18,7 @@ namespace SessionManager.Application.Interfaces
         Task ExtendSessionAsync(Guid userId, string token, TimeSpan ttl);
         // Get all active sessions for a user
         Task<IEnumerable<SessionInfo>> GetActiveSessionsAsync(Guid userId);
+        Task<SessionStatsDto> GetSessionStatsAsync(Guid? userId);
+
     }
 }

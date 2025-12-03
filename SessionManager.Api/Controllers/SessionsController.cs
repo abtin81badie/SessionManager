@@ -87,10 +87,19 @@ namespace SessionManager.Api.Controllers
             // 1. Validate & Extract Token (Throws ArgumentException -> 400 if missing/bad format)
             var claims = SessionValidator.ValidateAndExtractClaims(Request);
 
-            // 2. Fetch from Repository
+            // 2. CHECK SESSION VALIDITY (New Logic)
+            // Even if JWT is valid, we must ensure the session exists in Redis.
+            // This prevents access if the user was force-logged out or the session expired.
+            var currentSession = await _sessionRepository.GetSessionAsync(claims.SessionId);
+            if (currentSession == null)
+            {
+                return Unauthorized(new { Message = "Session expired or revoked." });
+            }
+
+            // 3. Fetch from Repository
             var sessions = await _sessionRepository.GetActiveSessionsAsync(claims.UserId);
 
-            // 3. Map to DTO with HATEOAS
+            // 4. Map to DTO with HATEOAS
             var sessionDtos = sessions.Select(s => new SessionDto
             {
                 Token = s.Token,

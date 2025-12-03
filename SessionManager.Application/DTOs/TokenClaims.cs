@@ -6,5 +6,7 @@ namespace SessionManager.Application.DTOs
     {
         public Guid UserId { get; set; }
         public string SessionId { get; set; } = string.Empty; // This corresponds to 'jti'
+        public string Role { get; set; } = string.Empty; 
+
     }
 }

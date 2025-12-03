@@ -1,5 +1,6 @@
 ﻿using SessionManager.Application.DTOs;
 using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 
 namespace SessionManager.Api.Middleware
 {
@@ -7,7 +8,6 @@ namespace SessionManager.Api.Middleware
     {
         public static TokenClaims ValidateAndExtractClaims(HttpRequest request)
         {
-            // 1. Check Header
             if (!request.Headers.TryGetValue("Authorization", out var authHeader))
             {
                 throw new ArgumentException("Missing Authorization Header.");
@@ -20,7 +20,6 @@ namespace SessionManager.Api.Middleware
                 throw new ArgumentException("Invalid Authorization Token format.");
             }
 
-            // 2. Parse JWT
             try
             {
                 var handler = new JwtSecurityTokenHandler();
@@ -28,10 +27,12 @@ namespace SessionManager.Api.Middleware
 
                 var subClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub);
                 var jtiClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Jti);
+                // Role can be "role" or ClaimTypes.Role depending on issuer
+                var roleClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == "role" || c.Type == ClaimTypes.Role);
 
-                if (subClaim == null || jtiClaim == null)
+                if (subClaim == null || jtiClaim == null || roleClaim == null)
                 {
-                    throw new UnauthorizedAccessException("Invalid Token: Missing required claims (sub or jti).");
+                    throw new UnauthorizedAccessException("Invalid Token: Missing required claims (sub, jti, or role).");
                 }
 
                 if (!Guid.TryParse(subClaim.Value, out Guid userId))
@@ -42,12 +43,12 @@ namespace SessionManager.Api.Middleware
                 return new TokenClaims
                 {
                     UserId = userId,
-                    SessionId = jtiClaim.Value
+                    SessionId = jtiClaim.Value,
+                    Role = roleClaim.Value // Extracted Role
                 };
             }
             catch (Exception ex) when (ex is not UnauthorizedAccessException && ex is not ArgumentException)
             {
-                // Wrap generic parsing errors
                 throw new ArgumentException("Invalid Token format. Could not parse JWT.");
             }
         }
