@@ -1,13 +1,10 @@
-﻿// File: SessionManager.Infrastructure/Services/JwtService.cs
-
-using System;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using SessionManager.Application.Interfaces;
 using SessionManager.Domain.Entities;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 
 namespace SessionManager.Infrastructure.Services
 {

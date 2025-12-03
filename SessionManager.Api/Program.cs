@@ -1,9 +1,7 @@
-using Microsoft.EntityFrameworkCore;
 using SessionManager.Api.Middleware;
-using SessionManager.Application.Interfaces; // Needed for User Repo
-using SessionManager.Domain.Entities;        // Needed for User Entity
 using SessionManager.Infrastructure;
 using SessionManager.Infrastructure.Persistence;
+using System.Reflection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +18,10 @@ builder.Services.AddSwaggerGen(c =>
         Version = "v1",
         Description = "API for managing user sessions with Redis (Max 2 Devices rule)."
     });
+
+    var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    c.IncludeXmlComments(xmlPath);
 });
 
 // IOC REGISTRATION

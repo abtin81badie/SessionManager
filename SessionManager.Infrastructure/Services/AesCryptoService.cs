@@ -1,10 +1,7 @@
-﻿// File: SessionManager.Infrastructure/Services/AesCryptoService.cs
-
-using System;
+﻿using Microsoft.Extensions.Configuration;
+using SessionManager.Application.Interfaces;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.Extensions.Configuration;
-using SessionManager.Application.Interfaces;
 
 namespace SessionManager.Infrastructure.Services
 {

@@ -1,8 +1,8 @@
 ﻿namespace SessionManager.Application.DTOs
 {
-    public class LoginResponse
+    public class RenewSessionRequest
     {
+        // We need the Token to find the specific session
         public string Token { get; set; } = string.Empty;
-        public List<Link> Links { get; set; } = new List<Link>();
     }
 }

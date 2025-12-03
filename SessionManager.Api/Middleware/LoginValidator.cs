@@ -1,5 +1,4 @@
-﻿using System;
-using SessionManager.Application.DTOs;
+﻿using SessionManager.Application.DTOs;
 
 namespace SessionManager.Api.Middleware
 {

@@ -1,5 +1,4 @@
-﻿using System.Threading.Tasks;
-using SessionManager.Domain.Entities;
+﻿using SessionManager.Domain.Entities;
 
 namespace SessionManager.Application.Interfaces
 {

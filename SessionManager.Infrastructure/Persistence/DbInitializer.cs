@@ -2,8 +2,6 @@
 using Microsoft.Extensions.Logging;
 using SessionManager.Application.Interfaces;
 using SessionManager.Domain.Entities;
-using System;
-using System.Threading.Tasks;
 
 namespace SessionManager.Infrastructure.Persistence
 {

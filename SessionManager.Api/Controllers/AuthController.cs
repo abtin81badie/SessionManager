@@ -1,14 +1,10 @@
 ﻿// File: SessionManager.Api/Controllers/AuthController.cs
 
 using Microsoft.AspNetCore.Mvc;
+using SessionManager.Api.Middleware;
 using SessionManager.Application.DTOs;
 using SessionManager.Application.Interfaces;
-using SessionManager.Api.Middleware;
 using SessionManager.Domain.Entities;
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
 
 namespace SessionManager.Api.Controllers
 {

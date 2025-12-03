@@ -1,9 +1,7 @@
-﻿using StackExchange.Redis;
-using System;
-using System.Text.Json;
-using System.Threading.Tasks;
+﻿using SessionManager.Application.Interfaces;
 using SessionManager.Domain.Entities;
-using SessionManager.Application.Interfaces;
+using StackExchange.Redis;
+using System.Text.Json;
 
 namespace SessionManager.Infrastructure.Persistence
 {
@@ -12,7 +10,7 @@ namespace SessionManager.Infrastructure.Persistence
         private readonly IConnectionMultiplexer _redis;
         private readonly IDatabase _db;
 
-        // Note: defined as a standard string, not LuaScript object
+        // Script 1: Create Session (Max 2 Rule)
         private const string CreateSessionScript = @"
             local userSessionKey = KEYS[1]
             local sessionDataKey = KEYS[2]
@@ -38,6 +36,24 @@ namespace SessionManager.Infrastructure.Persistence
             return 1
         ";
 
+        // Script 2: Renew Session (Update Score & TTL)
+        private const string RenewSessionScript = @"
+            local userSessionKey = KEYS[1]
+            local sessionDataKey = KEYS[2]
+            local score = ARGV[1]
+            local token = ARGV[2]
+            local ttl = tonumber(ARGV[3])
+
+            -- 1. Update the Score in the ZSET (Make it 'newest')
+            -- XX means only update if element exists
+            local z_updated = redis.call('ZADD', userSessionKey, 'XX', score, token)
+
+            -- 2. Reset the TTL on the JSON data
+            local s_updated = redis.call('EXPIRE', sessionDataKey, ttl)
+
+            return z_updated
+        ";
+
         public RedisSessionRepository(IConnectionMultiplexer redis)
         {
             _redis = redis;
@@ -55,14 +71,9 @@ namespace SessionManager.Infrastructure.Persistence
             var keys = new RedisKey[] { userSessionKey, sessionDataKey };
             var values = new RedisValue[]
             {
-                currentScore,
-                session.Token,
-                jsonData,
-                2,
-                (long)ttl.TotalSeconds
+                currentScore, session.Token, jsonData, 2, (long)ttl.TotalSeconds
             };
 
-            // FIX: Passing the string directly to the method
             await _db.ScriptEvaluateAsync(CreateSessionScript, keys, values);
         }
 
@@ -83,6 +94,21 @@ namespace SessionManager.Infrastructure.Persistence
             _ = tran.KeyDeleteAsync(sessionDataKey);
             _ = tran.SortedSetRemoveAsync(userSessionKey, token);
             await tran.ExecuteAsync();
+        }
+
+        public async Task ExtendSessionAsync(Guid userId, string token, TimeSpan ttl)
+        {
+            var userSessionKey = $"user_sessions:{userId}";
+            var sessionDataKey = $"session:{token}";
+            var currentScore = DateTime.UtcNow.Ticks;
+
+            var keys = new RedisKey[] { userSessionKey, sessionDataKey };
+            var values = new RedisValue[]
+            {
+                currentScore, token, (long)ttl.TotalSeconds
+            };
+
+            await _db.ScriptEvaluateAsync(RenewSessionScript, keys, values);
         }
     }
 }

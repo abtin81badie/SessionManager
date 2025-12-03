@@ -1,6 +1,4 @@
-﻿using System;
-using System.Threading.Tasks;
-using SessionManager.Domain.Entities;
+﻿using SessionManager.Domain.Entities;
 
 namespace SessionManager.Application.Interfaces
 {
@@ -14,5 +12,8 @@ namespace SessionManager.Application.Interfaces
 
         // Removes a specific session (Logout)
         Task DeleteSessionAsync(string token, Guid userId);
+
+        // Method for renew
+        Task ExtendSessionAsync(Guid userId, string token, TimeSpan ttl);
     }
 }
