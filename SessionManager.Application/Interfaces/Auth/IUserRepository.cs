@@ -6,5 +6,6 @@ namespace SessionManager.Application.Interfaces
     {
         Task<User?> GetByUsernameAsync(string username);
         Task CreateUserAsync(User user);
+        Task<List<User>> GetUsersByIdsAsync(HashSet<Guid> userIds);
     }
 }

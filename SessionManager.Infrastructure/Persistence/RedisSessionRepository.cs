@@ -10,6 +10,12 @@ namespace SessionManager.Infrastructure.Persistence
     {
         private readonly IConnectionMultiplexer _redis;
         private readonly IDatabase _db;
+        private readonly IUserRepository _userRepository;
+
+
+        // ----------------------------------------------------------------------
+        // LUA SCRIPTS (Atomic Operations)
+        // ----------------------------------------------------------------------
 
         // Script 1: Create Session (Max 2 Rule)
         private const string CreateSessionScript = @"
@@ -69,11 +75,19 @@ namespace SessionManager.Infrastructure.Persistence
             return z_updated
         ";
 
-        public RedisSessionRepository(IConnectionMultiplexer redis)
+        // ----------------------------------------------------------------------
+        // CONSTRUCTOR
+        // ----------------------------------------------------------------------
+        public RedisSessionRepository(IConnectionMultiplexer redis, IUserRepository userRepository)
         {
             _redis = redis;
             _db = _redis.GetDatabase();
+            _userRepository = userRepository;
         }
+
+        // ----------------------------------------------------------------------
+        // PUBLIC METHODS
+        // ----------------------------------------------------------------------
 
         public async Task CreateSessionAsync(Guid userId, SessionInfo session, TimeSpan ttl)
         {
@@ -180,45 +194,73 @@ namespace SessionManager.Infrastructure.Persistence
         }
         public async Task<SessionStatsDto> GetSessionStatsAsync(Guid? userId)
         {
+            var stats = new SessionStatsDto();
+            var sessionKeysToFetch = new List<RedisKey>();
+            var uniqueUserIds = new HashSet<Guid>();
+
+            // 1. Gather keys from Redis
             if (userId.HasValue)
             {
-                // USER REPORT: Just check their own ZSET
-                var userSessionKey = $"user_sessions:{userId}";
-                var count = await _db.SortedSetLengthAsync(userSessionKey);
-
-                return new SessionStatsDto
-                {
-                    TotalActiveSessions = (int)count,
-                    UsersOnline = count > 0 ? 1 : 0
-                };
+                var userSessionIndex = $"user_sessions:{userId}";
+                var tokens = await _db.SortedSetRangeByRankAsync(userSessionIndex);
+                foreach (var token in tokens) sessionKeysToFetch.Add($"session:{token}");
             }
             else
             {
-                // ADMIN REPORT: Global Scan
-                // Note: In production, avoid Keys(). Use a dedicated counter or SCAN.
-                // For this implementation, we will use the Server command to scan keys.
                 var server = _redis.GetServer(_redis.GetEndPoints().First());
-
-                // Pattern to match all user session indexes
-                var pattern = "user_sessions:*";
-                int totalSessions = 0;
-                int usersOnline = 0;
-
-                // This iterates using SCAN internally (safe for production compared to KEYS)
-                await foreach (var key in server.KeysAsync(pattern: pattern))
+                await foreach (var key in server.KeysAsync(pattern: "user_sessions:*"))
                 {
-                    usersOnline++;
-                    // Count sessions in this user's ZSET
-                    var userSessionCount = await _db.SortedSetLengthAsync(key);
-                    totalSessions += (int)userSessionCount;
+                    var tokens = await _db.SortedSetRangeByRankAsync(key);
+                    foreach (var token in tokens) sessionKeysToFetch.Add($"session:{token}");
                 }
-
-                return new SessionStatsDto
-                {
-                    TotalActiveSessions = totalSessions,
-                    UsersOnline = usersOnline
-                };
             }
+
+            // 2. Fetch Session Data (MGET)
+            var activeSessions = new List<SessionInfo>();
+            if (sessionKeysToFetch.Any())
+            {
+                var redisValues = await _db.StringGetAsync(sessionKeysToFetch.ToArray());
+                foreach (var value in redisValues)
+                {
+                    if (value.HasValue)
+                    {
+                        var session = JsonSerializer.Deserialize<SessionInfo>(value!);
+                        if (session != null)
+                        {
+                            activeSessions.Add(session);
+                            uniqueUserIds.Add(session.UserId);
+                        }
+                    }
+                }
+            }
+
+            // 3. Fetch User Data (Using injected Repository)
+            var users = await _userRepository.GetUsersByIdsAsync(uniqueUserIds);
+
+            // 4. Map to DTO
+            foreach (var session in activeSessions)
+            {
+                var user = users.FirstOrDefault(u => u.Id == session.UserId)
+                           ?? new User { Username = "Unknown", Role = "N/A" };
+
+                stats.DetailedSessions.Add(new SessionDetailDto
+                {
+                    UserId = user.Id,
+                    UserName = user.Username,
+                    Role = user.Role,
+                    Token = session.Token,
+                    DeviceInfo = session.DeviceInfo,
+                    CreatedAt = session.CreatedAt,
+                    LastActiveAt = session.LastActiveAt,
+                    IsCurrentSession = false
+                });
+            }
+
+            // 5. Aggregates
+            stats.TotalActiveSessions = stats.DetailedSessions.Count;
+            stats.UsersOnline = stats.DetailedSessions.Select(s => s.UserId).Distinct().Count();
+
+            return stats;
         }
     }
 }
