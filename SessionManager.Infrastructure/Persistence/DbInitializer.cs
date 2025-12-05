@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.Configuration; 
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SessionManager.Application.Interfaces;
 using SessionManager.Domain.Entities;
@@ -14,39 +15,47 @@ namespace SessionManager.Infrastructure.Persistence
                 var services = scope.ServiceProvider;
                 try
                 {
-                    // 1. Create Database if missing
+                    // 1. Get Config Service
+                    var config = services.GetRequiredService<IConfiguration>();
+
+                    // 2. Read Credentials from Env/Config (with fallbacks for safety)
+                    var adminUsername = config["AdminSettings:Username"] ?? "admin";
+                    var adminPassword = config["AdminSettings:Password"] ?? "Admin123!";
+
+                    // 3. Create Database if missing
                     var context = services.GetRequiredService<PostgresDbContext>();
                     await context.Database.EnsureCreatedAsync();
 
-                    // 2. Seed Admin User
+                    // 4. Seed Admin User
                     var userRepo = services.GetRequiredService<IUserRepository>();
                     var crypto = services.GetRequiredService<ICryptoService>();
-                    // Uses PostgresDbContext for logging category since 'Program' is not accessible here
                     var logger = services.GetRequiredService<ILogger<PostgresDbContext>>();
 
-                    var adminUser = await userRepo.GetByUsernameAsync("admin");
+                    // Check if admin exists using the CONFIG username
+                    var adminUser = await userRepo.GetByUsernameAsync(adminUsername);
+
                     if (adminUser == null)
                     {
-                        logger.LogInformation("No Admin found. Seeding default Admin user...");
+                        logger.LogInformation($"No Admin found. Seeding default Admin user '{adminUsername}'...");
 
-                        var (cipherText, iv) = crypto.Encrypt("Admin123!");
+                        // Encrypt the CONFIG password
+                        var (cipherText, iv) = crypto.Encrypt(adminPassword);
 
                         var newAdmin = new User
                         {
                             Id = Guid.NewGuid(),
-                            Username = "admin",
+                            Username = adminUsername,
                             PasswordCipherText = cipherText,
                             PasswordIV = iv,
                             Role = "Admin"
                         };
 
                         await userRepo.CreateUserAsync(newAdmin);
-                        logger.LogInformation("Admin seeded! Credentials: 'admin' / 'Admin123!'");
+                        logger.LogInformation("Admin seeded successfully!");
                     }
                 }
                 catch (Exception ex)
                 {
-                    // Generic logger fallback if specific one fails, or just re-use context logger
                     var logger = services.GetRequiredService<ILogger<PostgresDbContext>>();
                     logger.LogError(ex, "An error occurred during database migration or seeding.");
                 }

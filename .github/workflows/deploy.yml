@@ -31,12 +31,14 @@ jobs:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           AES_KEY: ${{ secrets.AES_KEY }}
+          ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           password: ${{ secrets.PASSWORD }}
           # List the variables we want to pass into the script below
-          envs: DB_PASSWORD,JWT_SECRET,AES_KEY
+          envs: DB_PASSWORD,JWT_SECRET,AES_KEY,ADMIN_USERNAME,ADMIN_PASSWORD
           script: |
             cd /var/www/sessionmanager
 
@@ -45,6 +47,8 @@ jobs:
             echo "DB_PASSWORD=$DB_PASSWORD" > .env
             echo "JWT_SECRET=$JWT_SECRET" >> .env
             echo "AES_KEY=$AES_KEY" >> .env
+            echo "ADMIN_USERNAME=$ADMIN_USERNAME" >> .env
+            echo "ADMIN_PASSWORD=$ADMIN_PASSWORD" >> .env
             # ---------------------
 
             # Stop old containers

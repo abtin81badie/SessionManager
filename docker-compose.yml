@@ -14,6 +14,8 @@ services:
       - ConnectionStrings__Postgres=Host=postgres;Port=5432;Database=SessionDb;Username=postgres;Password=${DB_PASSWORD}
       - JwtSettings__Secret=${JWT_SECRET}
       - AesSettings__Key=${AES_KEY}
+      - AdminSettings__Username=${ADMIN_USERNAME}
+      - AdminSettings__Password=${ADMIN_PASSWORD}
     depends_on:
       # WAIT for the database to be actually ready before starting the API
       postgres:
