@@ -98,6 +98,9 @@ namespace SessionManager.Api.Controllers
             // 3. Fetch from Repository
             var sessions = await _sessionRepository.GetActiveSessionsAsync(claims.UserId);
 
+            // 3. EXTEND
+            await _sessionRepository.ExtendSessionAsync(claims.UserId, claims.SessionId, TimeSpan.FromHours(1));
+
             // 4. Map to DTO with HATEOAS
             var sessionDtos = sessions.Select(s => new SessionDto
             {

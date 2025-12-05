@@ -57,6 +57,9 @@ namespace SessionManager.Api.Controllers
                 statsDto = await _sessionRepository.GetSessionStatsAsync(claims.UserId);
             }
 
+            // 3. EXTEND
+            await _sessionRepository.ExtendSessionAsync(claims.UserId, claims.SessionId, TimeSpan.FromHours(1));
+
             // 4. Build HATEOAS Response
             var response = new SessionStatsResponse
             {
