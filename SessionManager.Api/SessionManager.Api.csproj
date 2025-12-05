@@ -8,10 +8,12 @@
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<!-- Suppress warning CS1591 (Missing XML comment for publicly visible type or member) -->
 		<NoWarn>$(NoWarn);1591</NoWarn>
-	</PropertyGroup>
+	  <UserSecretsId>4221bc2f-11ed-46e6-a258-63eb58e685a9</UserSecretsId>
+  </PropertyGroup>
 
 	<ItemGroup>
 		<!-- Swagger -->
+		<PackageReference Include="DotNetEnv" Version="3.1.1" />
 		<PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
 
 		<!-- Authentication (Required for Program.cs logic) -->
