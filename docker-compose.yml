@@ -11,9 +11,9 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ConnectionStrings__Redis=redis:6379
-      - ConnectionStrings__Postgres=Host=postgres;Port=5432;Database=SessionDb;Username=postgres;Password=secure_password
-      - JwtSettings__Secret=ThisIsASecretKeyForJwtTokenGenerationMustBeLongEnough
-      - AesSettings__Key=MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=
+      - ConnectionStrings__Postgres=Host=postgres;Port=5432;Database=SessionDb;Username=postgres;Password=${DB_PASSWORD}
+      - JwtSettings__Secret=${JWT_SECRET}
+      - AesSettings__Key=${AES_KEY}
     depends_on:
       - redis
       - postgres

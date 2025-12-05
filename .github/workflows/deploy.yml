@@ -13,6 +13,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v2
 
+      # 1. Copy all project files to the server
       - name: Copy files via SCP
         uses: appleboy/scp-action@master
         with:
@@ -22,14 +23,35 @@ jobs:
           source: "."
           target: "/var/www/sessionmanager"
 
+      # 2. SSH into server, create .env file, and restart Docker
       - name: SSH and Deploy
         uses: appleboy/ssh-action@master
+        env:
+          # Map GitHub Secrets to environment variables for this step
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          AES_KEY: ${{ secrets.AES_KEY }}
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           password: ${{ secrets.PASSWORD }}
+          # List the variables we want to pass into the script below
+          envs: DB_PASSWORD,JWT_SECRET,AES_KEY
           script: |
             cd /var/www/sessionmanager
+
+            # --- SECURITY STEP ---
+            # Create/Overwrite the .env file on the server with real secrets
+            echo "DB_PASSWORD=$DB_PASSWORD" > .env
+            echo "JWT_SECRET=$JWT_SECRET" >> .env
+            echo "AES_KEY=$AES_KEY" >> .env
+            # ---------------------
+
+            # Stop old containers
             docker-compose down
+
+            # Start new containers (Docker will now read the .env file we just made!)
             docker-compose up -d --build
+
+            # Clean up space
             docker image prune -f
