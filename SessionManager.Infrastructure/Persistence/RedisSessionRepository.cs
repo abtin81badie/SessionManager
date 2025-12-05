@@ -37,7 +37,21 @@ namespace SessionManager.Infrastructure.Persistence
             return 1
         ";
 
-        // Script 2: Renew Session (Update Score & TTL)
+        // Script 2: Delete Session
+        private const string DeleteSessionScript = @"
+        -- 1. Try to delete the session data
+        local deleted = redis.call('DEL', KEYS[1])
+
+        -- 2. If it was deleted (result is 1), remove it from the index
+        if deleted == 1 then
+            redis.call('ZREM', KEYS[2], ARGV[1])
+        end
+
+        -- 3. Return true (1) or false (0)
+        return deleted
+        ";
+
+        // Script 3: Renew Session (Update Score & TTL)
         private const string RenewSessionScript = @"
             local userSessionKey = KEYS[1]
             local sessionDataKey = KEYS[2]
@@ -75,7 +89,10 @@ namespace SessionManager.Infrastructure.Persistence
                 currentScore, session.Token, jsonData, 2, (long)ttl.TotalSeconds
             };
 
-            await _db.ScriptEvaluateAsync(CreateSessionScript, keys, values);
+            await _db.ScriptEvaluateAsync(
+                CreateSessionScript,
+                keys,
+                values);
         }
 
         public async Task<SessionInfo?> GetSessionAsync(string token)
@@ -88,26 +105,24 @@ namespace SessionManager.Infrastructure.Persistence
 
         public async Task<bool> DeleteSessionAsync(string token, Guid userId)
         {
-            var userSessionKey = $"user_sessions:{userId}";
-            var sessionDataKey = $"session:{token}";
+            // 1. Prepare the Keys
+            var sessionDataKey = $"session:{token}";        // KEYS[1]
+            var userSessionKey = $"user_sessions:{userId}"; // KEYS[2]
 
-            var tran = _db.CreateTransaction();
-            // We capture the task to check result later, or use KeyDeleteAsync directly
-            // For transactional integrity, we can't easily get the result of KeyDelete inside the transaction immediately.
-            // HOWEVER, simpler approach: If KeyDelete returns false, session didn't exist.
+            // 2. Prepare the Arguments
+            var keys = new RedisKey[] { sessionDataKey, userSessionKey };
+            var values = new RedisValue[] { token };
 
-            // Optimized logic:
-            // 1. Try to delete the main session key.
-            bool wasDeleted = await _db.KeyDeleteAsync(sessionDataKey);
+            // 3. Execute Atomically
+            var result = await _db.ScriptEvaluateAsync(
+                DeleteSessionScript,
+                keys,
+                values
+            );
 
-            if (wasDeleted)
-            {
-                // 2. Only if successful, remove from the User's index
-                await _db.SortedSetRemoveAsync(userSessionKey, token);
-                return true;
-            }
-
-            return false;
+            // 4. Return Result
+            // Redis returns 1 (integer) for true, 0 for false.
+            return (int)result == 1;
         }
 
         public async Task ExtendSessionAsync(Guid userId, string token, TimeSpan ttl)
@@ -122,7 +137,10 @@ namespace SessionManager.Infrastructure.Persistence
                 currentScore, token, (long)ttl.TotalSeconds
             };
 
-            await _db.ScriptEvaluateAsync(RenewSessionScript, keys, values);
+            await _db.ScriptEvaluateAsync(
+                RenewSessionScript,
+                keys,
+                values);
         }
 
         public async Task<IEnumerable<SessionInfo>> GetActiveSessionsAsync(Guid userId)

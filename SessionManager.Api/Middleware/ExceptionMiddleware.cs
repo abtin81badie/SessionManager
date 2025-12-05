@@ -11,19 +11,6 @@ namespace SessionManager.Api.Middleware
         {
             _next = next;
         }
-
-        public async Task InvokeAsync(HttpContext context)
-        {
-            try
-            {
-                await _next(context);
-            }
-            catch (Exception ex)
-            {
-                await HandleExceptionAsync(context, ex);
-            }
-        }
-
         private static Task HandleExceptionAsync(HttpContext context, Exception exception)
         {
             context.Response.ContentType = "application/json";
@@ -46,5 +33,18 @@ namespace SessionManager.Api.Middleware
             var result = JsonSerializer.Serialize(new { error = message, details = exception.Message });
             return context.Response.WriteAsync(result);
         }
+
+        public async Task InvokeAsync(HttpContext context)
+        {
+            try
+            {
+                await _next(context);
+            }
+            catch (Exception ex)
+            {
+                await HandleExceptionAsync(context, ex);
+            }
+        }
+
     }
 }

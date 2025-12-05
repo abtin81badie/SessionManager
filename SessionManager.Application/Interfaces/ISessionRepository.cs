@@ -18,6 +18,7 @@ namespace SessionManager.Application.Interfaces
         Task ExtendSessionAsync(Guid userId, string token, TimeSpan ttl);
         // Get all active sessions for a user
         Task<IEnumerable<SessionInfo>> GetActiveSessionsAsync(Guid userId);
+        // Get the report base the User's role
         Task<SessionStatsDto> GetSessionStatsAsync(Guid? userId);
 
     }

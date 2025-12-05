@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Mvc;
 using SessionManager.Api.Middleware;
 using SessionManager.Application.DTOs;
 using SessionManager.Application.Interfaces;
-using System.IdentityModel.Tokens.Jwt;
 
 namespace SessionManager.Api.Controllers
 {

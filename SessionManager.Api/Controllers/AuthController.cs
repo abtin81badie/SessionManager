@@ -1,12 +1,9 @@
-﻿// File: SessionManager.Api/Controllers/AuthController.cs
-
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SessionManager.Api.Middleware;
 using SessionManager.Application.DTOs;
 using SessionManager.Application.Interfaces;
 using SessionManager.Domain.Entities;
-using System.IdentityModel.Tokens.Jwt;
 
 namespace SessionManager.Api.Controllers
 {
@@ -73,7 +70,7 @@ namespace SessionManager.Api.Controllers
         [HttpPost("login")]
         [AllowAnonymous]
         [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)] // Swagger will show generic error schema
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(object), StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
@@ -86,7 +83,6 @@ namespace SessionManager.Api.Controllers
 
             if (user == null)
             {
-                // === AUTO-REGISTRATION FLOW ===
                 // Encrypt the password using AES-256
                 var (cipherText, iv) = _cryptoService.Encrypt(request.Password);
 
@@ -103,7 +99,6 @@ namespace SessionManager.Api.Controllers
             }
             else
             {
-                // === LOGIN VERIFICATION FLOW ===
                 // Decrypt stored password and compare
                 var decryptedPassword = _cryptoService.Decrypt(user.PasswordCipherText, user.PasswordIV);
                 if (decryptedPassword != request.Password)
