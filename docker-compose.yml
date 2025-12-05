@@ -15,8 +15,11 @@ services:
       - JwtSettings__Secret=${JWT_SECRET}
       - AesSettings__Key=${AES_KEY}
     depends_on:
-      - redis
-      - postgres
+      # WAIT for the database to be actually ready before starting the API
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   redis:
     image: redis:alpine
@@ -28,12 +31,18 @@ services:
     image: postgres:16-alpine
     environment:
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=secure_password
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=SessionDb
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # Healthcheck ensures the DB is ready to accept connections
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:
