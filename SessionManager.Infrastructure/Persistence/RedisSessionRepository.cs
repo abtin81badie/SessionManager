@@ -13,7 +13,7 @@ namespace SessionManager.Infrastructure.Persistence
         private readonly IDatabase _db;
         private readonly IUserRepository _userRepository;
         private readonly SessionOptions _sessionOptions;
-
+        private readonly ISessionValidator _validator;
 
         // ----------------------------------------------------------------------
         // LUA SCRIPTS (Atomic Operations)
@@ -94,12 +94,14 @@ namespace SessionManager.Infrastructure.Persistence
         public RedisSessionRepository(
             IConnectionMultiplexer redis,
             IUserRepository userRepository,
-            IOptions<SessionOptions> sessionOptions) 
+            IOptions<SessionOptions> sessionOptions,
+            ISessionValidator validator) 
         {
             _redis = redis;
             _db = _redis.GetDatabase();
             _userRepository = userRepository;
             _sessionOptions = sessionOptions.Value;
+            _validator = validator;
         }
 
         // ----------------------------------------------------------------------
@@ -108,6 +110,8 @@ namespace SessionManager.Infrastructure.Persistence
 
         public async Task CreateSessionAsync(Guid userId, SessionInfo session)
         {
+            _validator.ValidateCreate(userId, session);
+
             var userSessionKey = $"user_sessions:{userId}";
             var sessionDataKey = $"session:{session.Token}";
 
@@ -140,6 +144,8 @@ namespace SessionManager.Infrastructure.Persistence
 
         public async Task<bool> DeleteSessionAsync(string token, Guid userId)
         {
+            _validator.ValidateDelete(userId, token);
+
             // 1. Prepare the Keys
             var sessionDataKey = $"session:{token}";        // KEYS[1]
             var userSessionKey = $"user_sessions:{userId}"; // KEYS[2]
@@ -162,6 +168,8 @@ namespace SessionManager.Infrastructure.Persistence
 
         public async Task ExtendSessionAsync(Guid userId, string token)
         {
+            _validator.ValidateExtend(userId, token);
+
             var userSessionKey = $"user_sessions:{userId}";
             var sessionDataKey = $"session:{token}";
             var currentTime = DateTime.UtcNow;

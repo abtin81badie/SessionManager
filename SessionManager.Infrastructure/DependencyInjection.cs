@@ -2,9 +2,10 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SessionManager.Application.Interfaces;
-using SessionManager.Infrastructure.Options; // <--- CRITICAL: Must match where you moved the classes
+using SessionManager.Infrastructure.Options;
 using SessionManager.Infrastructure.Persistence;
 using SessionManager.Infrastructure.Services;
+using SessionManager.Infrastructure.Validation; // <--- MAKE SURE THIS IS ADDED
 using StackExchange.Redis;
 
 namespace SessionManager.Infrastructure
@@ -16,13 +17,19 @@ namespace SessionManager.Infrastructure
             // ==========================================================
             // 1. CONFIGURATION BINDING (Options Pattern)
             // ==========================================================
-            // We bind the sections here so the rest of Infrastructure can use them.
             services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
             services.Configure<AesOptions>(configuration.GetSection(AesOptions.SectionName));
             services.Configure<AdminOptions>(configuration.GetSection(AdminOptions.SectionName));
 
             // ==========================================================
-            // 2. REDIS SETUP
+            // 2. VALIDATION SETUP 
+            // ==========================================================
+            // We register the Validator so the Repository can use it.
+            // Since the Repository is Scoped, the Validator should also be Scoped.
+            services.AddScoped<ISessionValidator, SessionValidator>();
+
+            // ==========================================================
+            // 3. REDIS SETUP
             // ==========================================================
             string redisConnectionString = configuration.GetConnectionString("Redis") ?? "localhost:6379";
 
@@ -36,7 +43,7 @@ namespace SessionManager.Infrastructure
             services.AddScoped<ISessionRepository, RedisSessionRepository>();
 
             // ==========================================================
-            // 3. POSTGRES & EF CORE SETUP
+            // 4. POSTGRES & EF CORE SETUP
             // ==========================================================
             services.AddDbContext<PostgresDbContext>(options =>
                 options.UseNpgsql(
@@ -47,7 +54,7 @@ namespace SessionManager.Infrastructure
             services.AddScoped<IUserRepository, PostgresUserRepository>();
 
             // ==========================================================
-            // 4. SECURITY SERVICES SETUP
+            // 5. SECURITY SERVICES SETUP
             // ==========================================================
             services.AddScoped<ICryptoService, AesCryptoService>();
             services.AddScoped<ITokenService, JwtService>();
