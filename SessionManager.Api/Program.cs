@@ -8,12 +8,30 @@ using SessionManager.Infrastructure.Persistence;
 var builder = WebApplication.CreateBuilder(args);
 
 // --- 1. CONFIGURATION ---
-// Load .env files
-var rootEnvPath = Path.Combine(Directory.GetCurrentDirectory(), "..", ".env");
-Env.Load(rootEnvPath);
-Env.Load();
+void LoadEnvFile()
+{
+    // Try to find .env in current folder, or go up parent directories
+    var current = new DirectoryInfo(Directory.GetCurrentDirectory());
+    while (current != null)
+    {
+        var envPath = Path.Combine(current.FullName, ".env");
+        if (File.Exists(envPath))
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"[Startup] Loaded .env file from: {envPath}");
+            Console.ResetColor();
+            Env.Load(envPath);
+            return;
+        }
+        current = current.Parent;
+    }
 
-// Map Environment variables to AppSettings
+    Console.ForegroundColor = ConsoleColor.Red;
+    Console.WriteLine($"[Startup] WARNING: .env file not found! Searched up from: {Directory.GetCurrentDirectory()}");
+    Console.ResetColor();
+}
+
+LoadEnvFile();
 OptionMapper.ConfigureAll(builder);
 
 // --- 2. SERVICE REGISTRATION ---

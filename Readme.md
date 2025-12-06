@@ -68,14 +68,23 @@ cd SessionManager
 Create a `.env` file in the **root directory** (next to `.sln` and `docker-compose.yml`):
 
 ```ini
-# Database & Security
-DB_PASSWORD=YourStrongPassword
-JWT_SECRET=YourSuperLongAndSecureJWTSecretKey
-AES_KEY=Your32ByteBase64Key
+# --- DATABASE ---
+DB_PASSWORD=LocalSecurePassword123!
 
-# Admin account for first run
+# --- SECURITY KEYS ---
+JWT_SECRET=ThisIsASecretKeyForJwtTokenGenerationMustBeLongEnough
+JWT_ISSUER=SessionManager
+JWT_AUDIENCE=SessionManagerClient
+JWT_EXPIRY=60
+AES_KEY=MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=
+
+# --- ADMIN USER ---
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=admin
+ADMIN_PASSWORD=MySuperSecretAdminPass123!
+
+# --- SESSION SETTINGS ---
+SESSION_MAX_CONCURRENT=2
+SESSION_TIMEOUT_MINUTES=60
 ```
 
 ### 3️⃣ Run with Docker Compose
@@ -144,12 +153,23 @@ dotnet test
 
 ```
 SessionManager/
-├── SessionManager.Api/             # API Controllers & Startup
-├── SessionManager.Application/     # Business Logic, DTOs, Interfaces
-├── SessionManager.Domain/          # Domain Entities
-├── SessionManager.Infrastructure/  # EF Core, Redis, PostgreSQL
-├── SessionManager.Tests/           # Unit Tests (xUnit + Moq)
-└── docker-compose.yml              # Docker Orchestration
+├── SessionManager.Api/           # Entry point
+│   ├── Controllers/              # Thin controllers (Map Request -> Command)
+│   └── Extensions/               # Service registration & Startup logic
+│
+├── SessionManager.Application/   # Core Business Logic
+│   ├── Behaviors/                # MediatR Validation Pipeline
+│   ├── DTOs/                     # Data Transfer Objects
+│   ├── Features/                 # CQRS (Commands, Queries, Handlers)
+│   └── Interfaces/               # Abstractions (ICurrentUserService, Repos)
+│
+├── SessionManager.Infrastructure/ # Implementation Details
+│   ├── Persistence/              # EF Core & Redis implementations
+│   ├── Services/                 # Crypto, Token, & User Services
+│   └── Options/                  # Configuration settings
+│
+├── SessionManager.Domain/        # Domain Entities
+└── docker-compose.yml            # Container Orchestration
 ```
 
 ---

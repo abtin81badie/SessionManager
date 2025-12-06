@@ -1,4 +1,5 @@
 ﻿using SessionManager.Infrastructure.Options;
+
 namespace SessionManager.Api.Mapper;
 
 public static class OptionMapper
@@ -19,14 +20,17 @@ public static class OptionMapper
 
         // --- Security Mappings ---
         Map("JWT_SECRET", $"{JwtOptions.SectionName}:Secret");
+        Map("JWT_ISSUER", $"{JwtOptions.SectionName}:Issuer");     
+        Map("JWT_AUDIENCE", $"{JwtOptions.SectionName}:Audience"); 
         Map("JWT_EXPIRY", $"{JwtOptions.SectionName}:ExpiryMinutes");
+
         Map("AES_KEY", $"{AesOptions.SectionName}:Key");
 
         // --- Admin Mappings ---
         Map("ADMIN_USERNAME", $"{AdminOptions.SectionName}:Username");
         Map("ADMIN_PASSWORD", $"{AdminOptions.SectionName}:Password");
 
-        // --- Session Mappings (NEW) ---
+        // --- Session Mappings ---
         Map("SESSION_MAX_CONCURRENT", $"{SessionOptions.SectionName}:MaxConcurrentSessions");
         Map("SESSION_TIMEOUT_MINUTES", $"{SessionOptions.SectionName}:SessionTimeoutMinutes");
     }
