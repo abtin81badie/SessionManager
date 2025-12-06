@@ -64,13 +64,24 @@ namespace SessionManager.Infrastructure.Persistence
             local score = ARGV[1]
             local token = ARGV[2]
             local ttl = tonumber(ARGV[3])
+            local newLastActiveAt = ARGV[4]
 
-            -- 1. Update the Score in the ZSET (Make it 'newest')
-            -- XX means only update if element exists
+            -- 1. Check if session data exists
+            local existingData = redis.call('GET', sessionDataKey)
+            if not existingData then
+                return 0
+            end
+
+            -- 2. Decode JSON, Update field, Encode JSON
+            local sessionObj = cjson.decode(existingData)
+            sessionObj['LastActiveAt'] = newLastActiveAt 
+            local newData = cjson.encode(sessionObj)
+
+            -- 3. Update the ZSET Score
             local z_updated = redis.call('ZADD', userSessionKey, 'XX', score, token)
 
-            -- 2. Reset the TTL on the JSON data
-            local s_updated = redis.call('EXPIRE', sessionDataKey, ttl)
+            -- 4. Save the updated JSON and reset TTL
+            redis.call('SET', sessionDataKey, newData, 'EX', ttl)
 
             return z_updated
         ";
@@ -143,12 +154,19 @@ namespace SessionManager.Infrastructure.Persistence
         {
             var userSessionKey = $"user_sessions:{userId}";
             var sessionDataKey = $"session:{token}";
-            var currentScore = DateTime.UtcNow.Ticks;
+            var currentTime = DateTime.UtcNow;
+            var currentScore = currentTime.Ticks;
+
+            // We must format the date exactly how System.Text.Json expects it
+            var newLastActiveString = currentTime.ToString("yyyy-MM-ddTHH:mm:ss.fffffffZ");
 
             var keys = new RedisKey[] { userSessionKey, sessionDataKey };
             var values = new RedisValue[]
             {
-                currentScore, token, (long)ttl.TotalSeconds
+                currentScore,
+                token,
+                (long)ttl.TotalSeconds,
+                newLastActiveString 
             };
 
             await _db.ScriptEvaluateAsync(
