@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Options;
-using SessionManager.Application.DTOs;
 using SessionManager.Application.Interfaces;
 using SessionManager.Domain.Entities;
 

@@ -1,7 +1,8 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using SessionManager.Api.Middleware;
 using SessionManager.Application.DTOs;
+using SessionManager.Application.Features.Admin.GetStats;
 using SessionManager.Application.Interfaces;
 
 namespace SessionManager.Api.Controllers
@@ -11,11 +12,13 @@ namespace SessionManager.Api.Controllers
     [Produces("application/json")]
     public class AdminController : ControllerBase
     {
-        private readonly ISessionRepository _sessionRepository;
+        private readonly IMediator _mediator;
+        private readonly ICurrentUserService _currentUserService;
 
-        public AdminController(ISessionRepository sessionRepository)
+        public AdminController(IMediator mediator, ICurrentUserService currentUserService)
         {
-            _sessionRepository = sessionRepository;
+            _mediator = mediator;
+            _currentUserService = currentUserService;
         }
 
         /// <summary>
@@ -28,53 +31,33 @@ namespace SessionManager.Api.Controllers
         /// <br/>
         /// **Side Effect:** Automatically extends the current session's lifespan.
         /// </remarks>
+        /// <returns>Statistics DTO with HATEOAS links.</returns>
+        /// <response code="200">Returns statistics.</response>
+        /// <response code="401">Unauthorized or Session Expired.</response>
         [HttpGet("stats")]
         [Authorize]
         [ProducesResponseType(typeof(SessionStatsResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> GetSessionStats()
         {
-            // 1. Extract Token Claims
-            var claims = SessionValidator.ValidateAndExtractClaims(Request);
+            // 1. Create Query using Service (Decoupled from HTTP)
+            var query = new GetSessionStatsQuery
+            {
+                UserId = _currentUserService.UserId,
+                Role = _currentUserService.Role,
+                CurrentSessionId = _currentUserService.SessionId
+            };
 
-            // 2. Validate Session Existence in Redis
-            var currentSession = await _sessionRepository.GetSessionAsync(claims.SessionId);
-            if (currentSession == null)
+            // 2. Dispatch
+            var statsDto = await _mediator.Send(query);
+
+            // 3. Handle Invalid Session
+            if (statsDto == null)
             {
                 return Unauthorized(new { Message = "Session expired or revoked." });
             }
 
-            // 3. Determine Report Scope (The Logic)
-            Guid? targetUserId;
-
-            if (claims.Role == "Admin")
-            {
-                // Admin asks for "null" -> Repository fetches ALL
-                targetUserId = null;
-            }
-            else
-            {
-                // Regular User -> Repository fetches ONLY this userId
-                targetUserId = claims.UserId;
-            }
-
-            // 4. Fetch Data
-            var statsDto = await _sessionRepository.GetSessionStatsAsync(targetUserId);
-
-            // 5. Flag Current Session (UI Helper)
-            // We loop through the results to mark which one matches the token used to make this request
-            foreach (var session in statsDto.DetailedSessions)
-            {
-                if (session.Token == claims.SessionId)
-                {
-                    session.IsCurrentSession = true;
-                }
-            }
-
-            // 6. Extend Session (Heartbeat)
-            await _sessionRepository.ExtendSessionAsync(claims.UserId, claims.SessionId);
-
-            // 7. Build HATEOAS Response
+            // 4. Build HATEOAS Response
             var response = new SessionStatsResponse
             {
                 TotalActiveSessions = statsDto.TotalActiveSessions,

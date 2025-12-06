@@ -7,15 +7,17 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<!-- Packages needed for Redis and JWT -->
-		<PackageReference Include="StackExchange.Redis" Version="2.7.10" />
-		<PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.0" />
-		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.3.1" />
-	<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<!-- THIS IS THE FIX: Linking Infrastructure to Application -->
+		<PackageReference Include="StackExchange.Redis" Version="2.7.10" />
+		<PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.0" />
+		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.3.1" />
+		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<ProjectReference Include="..\SessionManager.Application\SessionManager.Application.csproj" />
 	</ItemGroup>
 

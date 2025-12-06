@@ -1,8 +1,11 @@
-﻿using Microsoft.AspNetCore.Http; // Required for DefaultHttpContext
+﻿using MediatR;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using SessionManager.Api.Controllers;
 using SessionManager.Application.DTOs;
+using SessionManager.Application.Features.Auth.Login;
+using SessionManager.Application.Features.Auth.Logout;
 using SessionManager.Application.Interfaces;
 using SessionManager.Domain.Entities;
 using System.IdentityModel.Tokens.Jwt;
@@ -13,28 +16,18 @@ namespace SessionManager.Tests
 {
     public class AuthControllerTests
     {
-        private readonly Mock<ISessionRepository> _mockSessionRepo;
-        private readonly Mock<IUserRepository> _mockUserRepo;
-        private readonly Mock<ICryptoService> _mockCrypto;
-        private readonly Mock<ITokenService> _mockToken;
+        private readonly Mock<IMediator> _mockMediator;
         private readonly AuthController _controller;
+        private readonly Mock<ICurrentUserService> _mockUserService;
 
         public AuthControllerTests()
         {
-            _mockSessionRepo = new Mock<ISessionRepository>();
-            _mockUserRepo = new Mock<IUserRepository>();
-            _mockCrypto = new Mock<ICryptoService>();
-            _mockToken = new Mock<ITokenService>();
-
-            _controller = new AuthController(
-                _mockSessionRepo.Object,
-                _mockUserRepo.Object,
-                _mockCrypto.Object,
-                _mockToken.Object
-            );
+            _mockMediator = new Mock<IMediator>();
+            _mockUserService = new Mock<ICurrentUserService>(); 
+            _controller = new AuthController(_mockMediator.Object, _mockUserService.Object);
         }
 
-        // --- HELPER: Generate Fake JWT ---
+        // --- HELPER: Generate Fake JWT (Needed for Logout extraction) ---
         private string GenerateTestJwt(string? jti = null, string? sub = null)
         {
             var claims = new List<Claim> { new Claim("role", "User") };
@@ -58,57 +51,24 @@ namespace SessionManager.Tests
         }
 
         // ==========================================
-        // LOGIN TESTS (Unchanged mostly, logic is body-based)
+        // LOGIN TESTS (Mediator Dispatch)
         // ==========================================
 
         [Fact]
-        public async Task Login_Should_AutoRegister_IfUserDoesNotExist()
+        public async Task Login_Should_DispatchCommand_And_ReturnOk()
         {
             // Arrange
-            var request = new LoginRequest { Username = "newuser", Password = "Password123", DeviceName = "PC" };
+            var request = new LoginRequest { Username = "testuser", Password = "Password123", DeviceName = "PC" };
 
-            _mockUserRepo.Setup(x => x.GetByUsernameAsync(request.Username))
-                .ReturnsAsync((User?)null);
+            // Simulate the Handler returning a successful result
+            var expectedResult = new LoginResult
+            {
+                Token = "fake-jwt",
+                User = new User { Id = Guid.NewGuid(), Username = "testuser" }
+            };
 
-            _mockCrypto.Setup(x => x.Encrypt(It.IsAny<string>()))
-                .Returns(("encrypted", "iv"));
-
-            _mockToken.Setup(x => x.GenerateJwt(It.IsAny<User>(), It.IsAny<string>()))
-                .Returns("fake-jwt-token");
-
-            // Act
-            var result = await _controller.Login(request);
-
-            // Assert
-            var okResult = Assert.IsType<OkObjectResult>(result);
-            _mockUserRepo.Verify(x => x.CreateUserAsync(It.Is<User>(u => u.Username == "newuser")), Times.Once);
-            _mockSessionRepo.Verify(x => x.CreateSessionAsync(It.IsAny<Guid>(), It.IsAny<SessionInfo>()), Times.Once);
-        }
-
-        [Fact]
-        public async Task Login_Should_Fail_IfPasswordIsWrong()
-        {
-            // Arrange
-            var request = new LoginRequest { Username = "existing", Password = "WrongPassword", DeviceName = "PC" };
-            var existingUser = new User { Username = "existing", PasswordCipherText = "cipher", PasswordIV = "iv" };
-
-            _mockUserRepo.Setup(x => x.GetByUsernameAsync("existing")).ReturnsAsync(existingUser);
-            _mockCrypto.Setup(x => x.Decrypt("cipher", "iv")).Returns("RealPassword");
-
-            // Act & Assert
-            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => _controller.Login(request));
-        }
-
-        [Fact]
-        public async Task Login_Should_Succeed_IfPasswordIsCorrect()
-        {
-            // Arrange
-            var request = new LoginRequest { Username = "existing", Password = "RealPassword", DeviceName = "PC" };
-            var existingUser = new User { Username = "existing", PasswordCipherText = "cipher", PasswordIV = "iv" };
-
-            _mockUserRepo.Setup(x => x.GetByUsernameAsync("existing")).ReturnsAsync(existingUser);
-            _mockCrypto.Setup(x => x.Decrypt("cipher", "iv")).Returns("RealPassword");
-            _mockToken.Setup(x => x.GenerateJwt(It.IsAny<User>(), It.IsAny<string>())).Returns("valid-jwt");
+            _mockMediator.Setup(x => x.Send(It.IsAny<LoginCommand>(), default))
+                .ReturnsAsync(expectedResult);
 
             // Act
             var result = await _controller.Login(request);
@@ -116,46 +76,73 @@ namespace SessionManager.Tests
             // Assert
             var okResult = Assert.IsType<OkObjectResult>(result);
             var response = Assert.IsType<LoginResponse>(okResult.Value);
-            Assert.Equal("valid-jwt", response.Token);
+
+            // Verify Mapping
+            Assert.Equal("fake-jwt", response.Token);
+            Assert.Contains(response.Links, l => l.Rel == "self"); // Verify HATEOAS was added
+
+            // Verify Mediator was called with correct data
+            _mockMediator.Verify(x => x.Send(It.Is<LoginCommand>(c =>
+                c.Username == "testuser" &&
+                c.DeviceName == "PC"), default), Times.Once);
+        }
+
+        [Fact]
+        public async Task Login_Should_Throw_If_Mediator_Throws_Unauthorized()
+        {
+            // Arrange
+            var request = new LoginRequest { Username = "baduser", Password = "wrong", DeviceName = "PC" };
+
+            // Simulate the Handler throwing an exception (e.g., Wrong Password)
+            _mockMediator.Setup(x => x.Send(It.IsAny<LoginCommand>(), default))
+                .ThrowsAsync(new UnauthorizedAccessException("Invalid credentials"));
+
+            // Act & Assert
+            // The Controller just propagates the exception to the Middleware
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => _controller.Login(request));
         }
 
         // ==========================================
-        // LOGOUT TESTS (Updated for Headers)
+        // LOGOUT TESTS (Fixed for ICurrentUserService)
         // ==========================================
 
         [Fact]
-        public async Task Logout_Should_ReturnOk_WhenTokenIsValidAndSessionDeleted()
+        public async Task Logout_Should_ReturnOk_When_Mediator_Returns_True()
         {
             // Arrange
             var sessionId = Guid.NewGuid().ToString();
             var userId = Guid.NewGuid();
-            var validToken = GenerateTestJwt(jti: sessionId, sub: userId.ToString());
 
-            // Inject Header
-            SetupHttpContext(validToken);
+            // FIX: Mock the Service directly. Do NOT set HttpContext.
+            // The Controller asks _currentUserService for these values.
+            _mockUserService.Setup(x => x.UserId).Returns(userId);
+            _mockUserService.Setup(x => x.SessionId).Returns(sessionId);
 
-            _mockSessionRepo.Setup(x => x.DeleteSessionAsync(sessionId, userId))
+            // Simulate Mediator Success
+            _mockMediator.Setup(x => x.Send(It.IsAny<LogoutCommand>(), default))
                 .ReturnsAsync(true);
 
             // Act
-            var result = await _controller.Logout(); // No arguments
+            var result = await _controller.Logout();
 
             // Assert
-            var okResult = Assert.IsType<OkObjectResult>(result);
-            _mockSessionRepo.Verify(x => x.DeleteSessionAsync(sessionId, userId), Times.Once);
+            Assert.IsType<OkObjectResult>(result);
+
+            // FIX: Verify matches the Mocked values above
+            _mockMediator.Verify(x => x.Send(It.Is<LogoutCommand>(c =>
+                c.UserId == userId &&
+                c.SessionId == sessionId), default), Times.Once);
         }
 
         [Fact]
-        public async Task Logout_Should_ReturnNotFound_WhenSessionAlreadyDeleted()
+        public async Task Logout_Should_ReturnNotFound_When_Mediator_Returns_False()
         {
             // Arrange
-            var sessionId = Guid.NewGuid().ToString();
-            var userId = Guid.NewGuid();
-            var validToken = GenerateTestJwt(jti: sessionId, sub: userId.ToString());
+            _mockUserService.Setup(x => x.UserId).Returns(Guid.NewGuid());
+            _mockUserService.Setup(x => x.SessionId).Returns("session-1");
 
-            SetupHttpContext(validToken);
-
-            _mockSessionRepo.Setup(x => x.DeleteSessionAsync(sessionId, userId))
+            // Simulate Failure
+            _mockMediator.Setup(x => x.Send(It.IsAny<LogoutCommand>(), default))
                 .ReturnsAsync(false);
 
             // Act
@@ -169,11 +156,17 @@ namespace SessionManager.Tests
         public async Task Logout_Should_ThrowArgumentException_WhenTokenIsMalformed()
         {
             // Arrange
-            // "BadToken" causes JwtSecurityTokenHandler to throw, or SessionValidator validation logic to fail
-            SetupHttpContext("BadToken");
+            // FIX: The Controller logic relies on ICurrentUserService to throw if the token is bad.
+            // So we must Mock that exception here.
+
+            _mockUserService.Setup(x => x.UserId)
+                .Throws(new ArgumentException("Invalid Token: User ID is missing."));
 
             // Act & Assert
             await Assert.ThrowsAsync<ArgumentException>(() => _controller.Logout());
+
+            // Verify Mediator was NEVER called because exception happened first
+            _mockMediator.Verify(x => x.Send(It.IsAny<LogoutCommand>(), default), Times.Never);
         }
     }
 }

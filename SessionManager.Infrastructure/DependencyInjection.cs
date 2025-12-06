@@ -5,7 +5,7 @@ using SessionManager.Application.Interfaces;
 using SessionManager.Infrastructure.Options;
 using SessionManager.Infrastructure.Persistence;
 using SessionManager.Infrastructure.Services;
-using SessionManager.Infrastructure.Validation; // <--- MAKE SURE THIS IS ADDED
+using SessionManager.Infrastructure.Validation;
 using StackExchange.Redis;
 
 namespace SessionManager.Infrastructure

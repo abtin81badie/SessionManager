@@ -1,14 +1,15 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using SessionManager.Api.Middleware;
 using SessionManager.Application.DTOs;
+using SessionManager.Application.Features.Auth.Login;
+using SessionManager.Application.Features.Auth.Logout;
 using SessionManager.Application.Interfaces;
-using SessionManager.Domain.Entities;
 
 namespace SessionManager.Api.Controllers
 {
     /// <summary>
-    /// Manages User Authentication and Session Creation.
+    /// Manages User Authentication and Session Creation via CQRS.
     /// </summary>
     [ApiController]
     [Route("api/auth")]
@@ -16,21 +17,14 @@ namespace SessionManager.Api.Controllers
     [Consumes("application/json")]
     public class AuthController : ControllerBase
     {
-        private readonly ISessionRepository _sessionRepository;
-        private readonly IUserRepository _userRepository;
-        private readonly ICryptoService _cryptoService;
-        private readonly ITokenService _tokenService;
+        private readonly IMediator _mediator;
+        private readonly ICurrentUserService _currentUserService;
 
-        public AuthController(
-            ISessionRepository sessionRepository,
-            IUserRepository userRepository,
-            ICryptoService cryptoService,
-            ITokenService tokenService)
+        // Injected ICurrentUserService to decouple Claims/HTTP logic
+        public AuthController(IMediator mediator, ICurrentUserService currentUserService)
         {
-            _sessionRepository = sessionRepository;
-            _userRepository = userRepository;
-            _cryptoService = cryptoService;
-            _tokenService = tokenService;
+            _mediator = mediator;
+            _currentUserService = currentUserService;
         }
 
         /// <summary>
@@ -39,9 +33,9 @@ namespace SessionManager.Api.Controllers
         /// <remarks>
         /// **Key Features:**
         /// <br/>
-        /// 1. **Auto-Registration:** If the <paramref name="request"/>.Username does not exist in the database, a new user is automatically created with the provided credentials.
+        /// 1. **Auto-Registration:** If the <paramref name="request"/>.Username does not exist in the database, a new user is automatically created.
         /// <br/>
-        /// 2. **Max-2-Device Rule:** This endpoint enforces a strict limit of 2 active sessions per user. If a 3rd session is created, the oldest session is automatically evicted via Redis Lua scripting.
+        /// 2. **Max-2-Device Rule:** Enforces session limits via the Application Layer.
         /// <br/>
         /// 3. **HATEOAS:** The response includes dynamic links to related actions (Renew, Logout).
         /// </remarks>
@@ -49,24 +43,11 @@ namespace SessionManager.Api.Controllers
         /// <returns>A JWT Token and HATEOAS links.</returns>
         /// <response code="200">
         /// **Success.** Returns the JWT token and links.
-        /// <br/>
-        /// Example Links:
-        /// <ul>
-        /// <li>`self`: This endpoint</li>
-        /// <li>`renew`: POST /api/sessions/renew</li>
-        /// <li>`logout`: DELETE /api/auth/logout</li>
-        /// </ul>
         /// </response>
         /// <response code="400">
-        /// **Bad Request.** /// <br/>
-        /// Possible reasons:
-        /// <ul>
-        /// <li>Username is too short (min 3 chars).</li>
-        /// <li>Password is too short (min 6 chars).</li>
-        /// <li>DeviceName is missing.</li>
-        /// </ul>
+        /// **Bad Request.** Invalid input (username too short, etc).
         /// </response>
-        /// <response code="401">**Unauthorized.** Invalid password for an existing user.</response>
+        /// <response code="401">**Unauthorized.** Invalid credentials.</response>
         [HttpPost("login")]
         [AllowAnonymous]
         [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
@@ -74,63 +55,21 @@ namespace SessionManager.Api.Controllers
         [ProducesResponseType(typeof(object), StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
-            // 1. Validation
-            // Throws ArgumentException if invalid, caught by global ExceptionMiddleware
-            LoginValidator.Validate(request);
-
-            // 2. Check if user exists
-            var user = await _userRepository.GetByUsernameAsync(request.Username);
-
-            if (user == null)
+            // 1. Map DTO to Command
+            var command = new LoginCommand
             {
-                // Encrypt the password using AES-256
-                var (cipherText, iv) = _cryptoService.Encrypt(request.Password);
-
-                user = new User
-                {
-                    Id = Guid.NewGuid(),
-                    Username = request.Username,
-                    PasswordCipherText = cipherText,
-                    PasswordIV = iv,
-                    Role = "User" // Default role
-                };
-
-                await _userRepository.CreateUserAsync(user);
-            }
-            else
-            {
-                // Decrypt stored password and compare
-                var decryptedPassword = _cryptoService.Decrypt(user.PasswordCipherText, user.PasswordIV);
-                if (decryptedPassword != request.Password)
-                {
-                    throw new UnauthorizedAccessException("Invalid username or password.");
-                }
-            }
-
-            // 3. Create Session Token (Used as key in Redis)
-            var sessionToken = Guid.NewGuid().ToString();
-
-            // 4. Generate JWT (Linked to the Redis Session Token via 'jti' claim)
-            var jwt = _tokenService.GenerateJwt(user, sessionToken);
-
-            // 5. Create Session Object
-            var sessionInfo = new SessionInfo
-            {
-                Token = sessionToken,
-                UserId = user.Id,
-                DeviceInfo = request.DeviceName,
-                CreatedAt = DateTime.UtcNow,
-                LastActiveAt = DateTime.UtcNow
+                Username = request.Username,
+                Password = request.Password,
+                DeviceName = request.DeviceName
             };
 
-            // 6. Save to Redis (Max 2 Devices Rule Enforced here via Lua Script)
-            // TTL is set to 1 hour
-            await _sessionRepository.CreateSessionAsync(user.Id, sessionInfo);
+            // 2. Dispatch to Application Layer
+            var result = await _mediator.Send(command);
 
-            // 7. HATEOAS Response Construction
+            // 3. Handle Presentation (HATEOAS)
             var response = new LoginResponse
             {
-                Token = jwt,
+                Token = result.Token,
                 Links = new List<Link>
                 {
                     new Link("self", "/api/auth/login", "POST"),
@@ -147,9 +86,8 @@ namespace SessionManager.Api.Controllers
         /// Logs out a user by invalidating their specific session token.
         /// </summary>
         /// <remarks>
-        /// Removes the session data from Redis. If the token is already invalid or expired, returns 404.
+        /// Sends a command to remove the session data from persistence.
         /// </remarks>
-        /// <param name="request">The JWT Token to revoke.</param>
         /// <returns>Success message.</returns>
         /// <response code="200">Session successfully deleted.</response>
         /// <response code="400">Invalid Token format.</response>
@@ -158,16 +96,22 @@ namespace SessionManager.Api.Controllers
         [Authorize]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)] // Added 404
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Logout()
         {
-            // 1. Single line to get claims
-            var claims = SessionValidator.ValidateAndExtractClaims(Request);
+            // 1. Extract Data using Service (Decoupled from HTTP Request)
+            // The ICurrentUserService reads the User Principal set by the middleware.
+            var command = new LogoutCommand
+            {
+                UserId = _currentUserService.UserId,
+                SessionId = _currentUserService.SessionId
+            };
 
-            // 2. Delete from Redis AND Check Result
-            bool wasDeleted = await _sessionRepository.DeleteSessionAsync(claims.SessionId, claims.UserId);
+            // 2. Dispatch
+            bool isDeleted = await _mediator.Send(command);
 
-            if (!wasDeleted)
+            // 3. Return correct HTTP Status based on Result
+            if (!isDeleted)
             {
                 return NotFound(new { Message = "Session not found or already logged out." });
             }

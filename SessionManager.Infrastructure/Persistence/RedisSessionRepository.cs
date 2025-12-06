@@ -12,8 +12,8 @@ namespace SessionManager.Infrastructure.Persistence
         private readonly IConnectionMultiplexer _redis;
         private readonly IDatabase _db;
         private readonly IUserRepository _userRepository;
-        private readonly SessionOptions _sessionOptions;
         private readonly ISessionValidator _validator;
+        private readonly SessionOptions _sessionOptions;
 
         // ----------------------------------------------------------------------
         // LUA SCRIPTS (Atomic Operations)

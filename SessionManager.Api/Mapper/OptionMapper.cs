@@ -1,6 +1,5 @@
 ﻿using SessionManager.Infrastructure.Options;
-
-namespace SessionManager.Api.Configuration;
+namespace SessionManager.Api.Mapper;
 
 public static class OptionMapper
 {

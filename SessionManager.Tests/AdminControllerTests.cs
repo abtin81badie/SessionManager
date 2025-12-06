@@ -1,69 +1,67 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using MediatR;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using SessionManager.Api.Controllers;
 using SessionManager.Application.DTOs;
+using SessionManager.Application.Features.Admin.GetStats;
 using SessionManager.Application.Interfaces;
-using SessionManager.Domain.Entities;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace SessionManager.Tests
 {
     public class AdminControllerTests
     {
-        private readonly Mock<ISessionRepository> _mockSessionRepo;
+        private readonly Mock<IMediator> _mockMediator;
+        private readonly Mock<ICurrentUserService> _mockUserService;
         private readonly AdminController _controller;
 
         public AdminControllerTests()
         {
-            _mockSessionRepo = new Mock<ISessionRepository>();
-            _controller = new AdminController(_mockSessionRepo.Object);
-        }
+            _mockMediator = new Mock<IMediator>();
+            _mockUserService = new Mock<ICurrentUserService>();
 
-        // --- HELPER: Generate Fake JWT ---
-        private string GenerateTestJwt(string role, string jti, string sub)
-        {
-            var claims = new List<Claim>
-            {
-                new Claim(ClaimTypes.Role, role),
-                new Claim(JwtRegisteredClaimNames.Jti, jti),
-                new Claim(JwtRegisteredClaimNames.Sub, sub)
-            };
-
-            var token = new JwtSecurityToken(claims: claims);
-            return new JwtSecurityTokenHandler().WriteToken(token);
-        }
-
-        // --- HELPER: Setup Controller Context ---
-        private void SetupControllerContext(string token)
-        {
-            var httpContext = new DefaultHttpContext();
-            httpContext.Request.Headers["Authorization"] = $"Bearer {token}";
-            _controller.ControllerContext = new ControllerContext()
-            {
-                HttpContext = httpContext
-            };
+            _controller = new AdminController(_mockMediator.Object, _mockUserService.Object);
         }
 
         [Fact]
-        public async Task GetSessionStats_Admin_ShouldCallRepoWithNull()
+        public async Task GetSessionStats_Should_ReturnOk_When_MediatorReturnsData()
         {
             // Arrange
-            var sessionId = Guid.NewGuid().ToString();
             var userId = Guid.NewGuid();
-            var token = GenerateTestJwt("Admin", sessionId, userId.ToString());
+            var sessionId = "test-session";
+            var userRole = "Admin";
 
-            SetupControllerContext(token);
+            // 1. Mock the Service (Controller reads from here)
+            _mockUserService.Setup(x => x.UserId).Returns(userId);
+            _mockUserService.Setup(x => x.SessionId).Returns(sessionId);
+            _mockUserService.Setup(x => x.Role).Returns(userRole);
 
-            // Mock Session Existence Check (Critical step in your new logic)
-            _mockSessionRepo.Setup(x => x.GetSessionAsync(sessionId))
-                .ReturnsAsync(new SessionInfo { Token = sessionId });
+            // 2. Mock Mediator Response
+            // FIX: Using 'SessionDetailDto' to match your class definition
+            var statsDto = new SessionStatsDto
+            {
+                TotalActiveSessions = 5,
+                UsersOnline = 2,
+                DetailedSessions = new List<SessionDetailDto>
+                {
+                    new SessionDetailDto
+                    {
+                        UserId = Guid.NewGuid(),
+                        UserName = "TestUser",
+                        DeviceInfo = "Chrome",
+                        Token = "token-123",
+                        Role = "User",
+                        IsCurrentSession = false
+                    }
+                }
+            };
 
-            // Mock Stats Return
-            _mockSessionRepo.Setup(x => x.GetSessionStatsAsync(null))
-                .ReturnsAsync(new SessionStatsDto { TotalActiveSessions = 10 });
+            _mockMediator.Setup(x => x.Send(It.IsAny<GetSessionStatsQuery>(), default))
+                .ReturnsAsync(statsDto);
 
             // Act
             var result = await _controller.GetSessionStats();
@@ -72,61 +70,42 @@ namespace SessionManager.Tests
             var okResult = Assert.IsType<OkObjectResult>(result);
             var response = Assert.IsType<SessionStatsResponse>(okResult.Value);
 
-            // Verify Admin Logic: Called with NULL
-            _mockSessionRepo.Verify(x => x.GetSessionStatsAsync(null), Times.Once);
-            Assert.Equal(10, response.TotalActiveSessions);
+            Assert.Equal(5, response.TotalActiveSessions);
+            Assert.Single(response.DetailedSessions); // Ensure the list has 1 item
+            Assert.Contains(response.Links, l => l.Rel == "self"); // Verify HATEOAS was added
+
+            // Verify Query Construction
+            _mockMediator.Verify(x => x.Send(It.Is<GetSessionStatsQuery>(q =>
+                q.UserId == userId &&
+                q.Role == userRole &&
+                q.CurrentSessionId == sessionId), default), Times.Once);
         }
 
+
         [Fact]
-        public async Task GetSessionStats_User_ShouldCallRepoWithUserId()
+        public async Task GetSessionStats_Should_ReturnUnauthorized_When_MediatorReturnsNull()
         {
             // Arrange
-            var sessionId = Guid.NewGuid().ToString();
-            var userId = Guid.NewGuid();
-            var token = GenerateTestJwt("User", sessionId, userId.ToString());
+            _mockUserService.Setup(x => x.UserId).Returns(Guid.NewGuid());
+            _mockUserService.Setup(x => x.Role).Returns("User");
+            _mockUserService.Setup(x => x.SessionId).Returns("expired-session");
 
-            SetupControllerContext(token);
-
-            // Mock Session Existence
-            _mockSessionRepo.Setup(x => x.GetSessionAsync(sessionId))
-                .ReturnsAsync(new SessionInfo { Token = sessionId });
-
-            // Mock Stats Return
-            _mockSessionRepo.Setup(x => x.GetSessionStatsAsync(userId))
-                .ReturnsAsync(new SessionStatsDto { TotalActiveSessions = 1 });
+            // Mock Mediator returning NULL
+            _mockMediator.Setup(x => x.Send(It.IsAny<GetSessionStatsQuery>(), default))
+                .ReturnsAsync((SessionStatsDto)null);
 
             // Act
             var result = await _controller.GetSessionStats();
 
             // Assert
-            var okResult = Assert.IsType<OkObjectResult>(result);
+            var unauthorizedResult = Assert.IsType<UnauthorizedObjectResult>(result);
 
-            // Verify User Logic: Called with specific UserId
-            _mockSessionRepo.Verify(x => x.GetSessionStatsAsync(userId), Times.Once);
-        }
+            // FIX: Use Reflection to get the 'Message' property from the anonymous object
+            var value = unauthorizedResult.Value;
+            var messageProperty = value.GetType().GetProperty("Message");
+            var messageValue = messageProperty?.GetValue(value, null) as string;
 
-        [Fact]
-        public async Task GetSessionStats_ShouldReturnUnauthorized_WhenSessionIsRevoked()
-        {
-            // Arrange
-            var sessionId = Guid.NewGuid().ToString();
-            var userId = Guid.NewGuid();
-            var token = GenerateTestJwt("User", sessionId, userId.ToString());
-
-            SetupControllerContext(token);
-
-            // Mock Session Lookup returns NULL (Session Revoked/Expired)
-            _mockSessionRepo.Setup(x => x.GetSessionAsync(sessionId))
-                .ReturnsAsync((SessionInfo?)null);
-
-            // Act
-            var result = await _controller.GetSessionStats();
-
-            // Assert
-            var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
-
-            // Verify we never even tried to fetch stats
-            _mockSessionRepo.Verify(x => x.GetSessionStatsAsync(It.IsAny<Guid?>()), Times.Never);
+            Assert.Equal("Session expired or revoked.", messageValue);
         }
     }
 }
