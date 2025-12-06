@@ -1,4 +1,5 @@
-﻿using SessionManager.Application.DTOs;
+﻿using Microsoft.Extensions.Options;
+using SessionManager.Application.DTOs;
 using SessionManager.Application.Interfaces;
 using SessionManager.Domain.Entities;
 using StackExchange.Redis;
@@ -11,6 +12,7 @@ namespace SessionManager.Infrastructure.Persistence
         private readonly IConnectionMultiplexer _redis;
         private readonly IDatabase _db;
         private readonly IUserRepository _userRepository;
+        private readonly SessionOptions _sessionOptions;
 
 
         // ----------------------------------------------------------------------
@@ -89,18 +91,22 @@ namespace SessionManager.Infrastructure.Persistence
         // ----------------------------------------------------------------------
         // CONSTRUCTOR
         // ----------------------------------------------------------------------
-        public RedisSessionRepository(IConnectionMultiplexer redis, IUserRepository userRepository)
+        public RedisSessionRepository(
+            IConnectionMultiplexer redis,
+            IUserRepository userRepository,
+            IOptions<SessionOptions> sessionOptions) 
         {
             _redis = redis;
             _db = _redis.GetDatabase();
             _userRepository = userRepository;
+            _sessionOptions = sessionOptions.Value;
         }
 
         // ----------------------------------------------------------------------
         // PUBLIC METHODS
         // ----------------------------------------------------------------------
 
-        public async Task CreateSessionAsync(Guid userId, SessionInfo session, TimeSpan ttl)
+        public async Task CreateSessionAsync(Guid userId, SessionInfo session)
         {
             var userSessionKey = $"user_sessions:{userId}";
             var sessionDataKey = $"session:{session.Token}";
@@ -108,16 +114,20 @@ namespace SessionManager.Infrastructure.Persistence
             var currentScore = DateTime.UtcNow.Ticks;
             var jsonData = JsonSerializer.Serialize(session);
 
+            var ttlSeconds = (long)TimeSpan.FromMinutes(_sessionOptions.SessionTimeoutMinutes).TotalSeconds;
+            var limit = _sessionOptions.MaxConcurrentSessions;
+
             var keys = new RedisKey[] { userSessionKey, sessionDataKey };
             var values = new RedisValue[]
             {
-                currentScore, session.Token, jsonData, 2, (long)ttl.TotalSeconds
+                currentScore,
+                session.Token,
+                jsonData,
+                limit,      
+                ttlSeconds  
             };
 
-            await _db.ScriptEvaluateAsync(
-                CreateSessionScript,
-                keys,
-                values);
+            await _db.ScriptEvaluateAsync(CreateSessionScript, keys, values);
         }
 
         public async Task<SessionInfo?> GetSessionAsync(string token)
@@ -150,12 +160,13 @@ namespace SessionManager.Infrastructure.Persistence
             return (int)result == 1;
         }
 
-        public async Task ExtendSessionAsync(Guid userId, string token, TimeSpan ttl)
+        public async Task ExtendSessionAsync(Guid userId, string token)
         {
             var userSessionKey = $"user_sessions:{userId}";
             var sessionDataKey = $"session:{token}";
             var currentTime = DateTime.UtcNow;
             var currentScore = currentTime.Ticks;
+            var ttlSeconds = (long)TimeSpan.FromMinutes(_sessionOptions.SessionTimeoutMinutes).TotalSeconds;
 
             // We must format the date exactly how System.Text.Json expects it
             var newLastActiveString = currentTime.ToString("yyyy-MM-ddTHH:mm:ss.fffffffZ");
@@ -165,7 +176,7 @@ namespace SessionManager.Infrastructure.Persistence
             {
                 currentScore,
                 token,
-                (long)ttl.TotalSeconds,
+                ttlSeconds,
                 newLastActiveString 
             };
 

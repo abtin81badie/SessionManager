@@ -82,7 +82,7 @@ namespace SessionManager.Tests
             // Assert
             var okResult = Assert.IsType<OkObjectResult>(result);
             _mockUserRepo.Verify(x => x.CreateUserAsync(It.Is<User>(u => u.Username == "newuser")), Times.Once);
-            _mockSessionRepo.Verify(x => x.CreateSessionAsync(It.IsAny<Guid>(), It.IsAny<SessionInfo>(), It.IsAny<TimeSpan>()), Times.Once);
+            _mockSessionRepo.Verify(x => x.CreateSessionAsync(It.IsAny<Guid>(), It.IsAny<SessionInfo>()), Times.Once);
         }
 
         [Fact]

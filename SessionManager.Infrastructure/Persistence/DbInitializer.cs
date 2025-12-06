@@ -1,8 +1,9 @@
-﻿using Microsoft.Extensions.Configuration; 
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options; // Required for IOptions
 using SessionManager.Application.Interfaces;
 using SessionManager.Domain.Entities;
+using SessionManager.Infrastructure.Options;
 
 namespace SessionManager.Infrastructure.Persistence
 {
@@ -13,14 +14,21 @@ namespace SessionManager.Infrastructure.Persistence
             using (var scope = serviceProvider.CreateScope())
             {
                 var services = scope.ServiceProvider;
+                var logger = services.GetRequiredService<ILogger<PostgresDbContext>>();
+
                 try
                 {
-                    // 1. Get Config Service
-                    var config = services.GetRequiredService<IConfiguration>();
+                    // 1. Retrieve Strongly Typed Admin Options
+                    var adminOptions = services.GetRequiredService<IOptions<AdminOptions>>().Value;
 
-                    // 2. Read Credentials from Env/Config (with fallbacks for safety)
-                    var adminUsername = config["AdminSettings:Username"] ?? "admin";
-                    var adminPassword = config["AdminSettings:Password"] ?? "Admin123!";
+                    // 2. Determine Credentials (use Options, fall back to defaults if empty)
+                    var adminUsername = !string.IsNullOrEmpty(adminOptions.Username)
+                        ? adminOptions.Username
+                        : "admin";
+
+                    var adminPassword = !string.IsNullOrEmpty(adminOptions.Password)
+                        ? adminOptions.Password
+                        : "Admin123!";
 
                     // 3. Create Database if missing
                     var context = services.GetRequiredService<PostgresDbContext>();
@@ -29,16 +37,15 @@ namespace SessionManager.Infrastructure.Persistence
                     // 4. Seed Admin User
                     var userRepo = services.GetRequiredService<IUserRepository>();
                     var crypto = services.GetRequiredService<ICryptoService>();
-                    var logger = services.GetRequiredService<ILogger<PostgresDbContext>>();
 
-                    // Check if admin exists using the CONFIG username
+                    // Check if admin exists
                     var adminUser = await userRepo.GetByUsernameAsync(adminUsername);
 
                     if (adminUser == null)
                     {
                         logger.LogInformation($"No Admin found. Seeding default Admin user '{adminUsername}'...");
 
-                        // Encrypt the CONFIG password
+                        // Encrypt the password
                         var (cipherText, iv) = crypto.Encrypt(adminPassword);
 
                         var newAdmin = new User
@@ -53,10 +60,13 @@ namespace SessionManager.Infrastructure.Persistence
                         await userRepo.CreateUserAsync(newAdmin);
                         logger.LogInformation("Admin seeded successfully!");
                     }
+                    else
+                    {
+                        logger.LogInformation("Admin user already exists. Skipping seed.");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    var logger = services.GetRequiredService<ILogger<PostgresDbContext>>();
                     logger.LogError(ex, "An error occurred during database migration or seeding.");
                 }
             }

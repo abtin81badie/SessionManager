@@ -77,7 +77,7 @@ namespace SessionManager.Tests
             var response = Assert.IsType<RenewSessionResponse>(okResult.Value);
 
             Assert.Equal("Session renewed successfully.", response.Message);
-            _mockSessionRepo.Verify(x => x.ExtendSessionAsync(userId, sessionId, It.IsAny<TimeSpan>()), Times.Once);
+            _mockSessionRepo.Verify(x => x.ExtendSessionAsync(userId, sessionId), Times.Once);
         }
 
     }

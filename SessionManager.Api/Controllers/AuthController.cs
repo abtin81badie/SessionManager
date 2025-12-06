@@ -125,7 +125,7 @@ namespace SessionManager.Api.Controllers
 
             // 6. Save to Redis (Max 2 Devices Rule Enforced here via Lua Script)
             // TTL is set to 1 hour
-            await _sessionRepository.CreateSessionAsync(user.Id, sessionInfo, TimeSpan.FromHours(1));
+            await _sessionRepository.CreateSessionAsync(user.Id, sessionInfo);
 
             // 7. HATEOAS Response Construction
             var response = new LoginResponse

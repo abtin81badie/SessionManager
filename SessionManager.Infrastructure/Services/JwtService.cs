@@ -1,45 +1,52 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using SessionManager.Application.Interfaces;
-using SessionManager.Domain.Entities;
+using SessionManager.Application.Interfaces; 
+using SessionManager.Domain.Entities;      
+using SessionManager.Infrastructure.Options; 
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 
-namespace SessionManager.Infrastructure.Services
+namespace SessionManager.Infrastructure.Services;
+
+public class JwtService : ITokenService
 {
-    public class JwtService : ITokenService
+    private readonly JwtOptions _jwtOptions;
+
+    public JwtService(IOptions<JwtOptions> jwtOptions)
     {
-        private readonly IConfiguration _config;
+        _jwtOptions = jwtOptions.Value;
+    }
 
-        public JwtService(IConfiguration config)
+    public string GenerateJwt(User user, string sessionId)
+    {
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var key = Encoding.ASCII.GetBytes(_jwtOptions.Secret);
+
+        var claims = new[]
         {
-            _config = config;
-        }
+            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new Claim(JwtRegisteredClaimNames.Jti, sessionId),
+            new Claim(ClaimTypes.Role, user.Role),
+            new Claim("username", user.Username)
+        };
 
-        public string GenerateJwt(User user, string sessionId)
+        var tokenDescriptor = new SecurityTokenDescriptor
         {
-            var secretKey = _config["JwtSettings:Secret"] ?? "super_secret_fallback_key_must_be_long";
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
-            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            Subject = new ClaimsIdentity(claims),
 
-            var claims = new[]
-            {
-                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-                new Claim(JwtRegisteredClaimNames.Jti, sessionId),
-                new Claim(ClaimTypes.Role, user.Role),
-                new Claim("username", user.Username)
-            };
+            Expires = DateTime.UtcNow.AddMinutes(_jwtOptions.ExpiryMinutes),
 
-            var token = new JwtSecurityToken(
-                issuer: "SessionManager",
-                audience: "SessionManagerClient",
-                claims: claims,
-                expires: DateTime.UtcNow.AddHours(1),
-                signingCredentials: creds
-            );
+            Issuer = _jwtOptions.Issuer,
+            Audience = _jwtOptions.Audience,
 
-            return new JwtSecurityTokenHandler().WriteToken(token);
-        }
+            SigningCredentials = new SigningCredentials(
+                new SymmetricSecurityKey(key),
+                SecurityAlgorithms.HmacSha256Signature
+            )
+        };
+
+        var token = tokenHandler.CreateToken(tokenDescriptor);
+        return tokenHandler.WriteToken(token);
     }
 }

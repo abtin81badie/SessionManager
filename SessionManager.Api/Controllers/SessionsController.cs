@@ -48,7 +48,7 @@ namespace SessionManager.Api.Controllers
                 return NotFound(new { Message = "Session not found or expired." });
 
             // 3. EXTEND
-            await _sessionRepository.ExtendSessionAsync(claims.UserId, claims.SessionId, TimeSpan.FromHours(1));
+            await _sessionRepository.ExtendSessionAsync(claims.UserId, claims.SessionId);
 
             // 4. BUILD HATEOAS RESPONSE
             var response = new RenewSessionResponse
@@ -99,7 +99,7 @@ namespace SessionManager.Api.Controllers
             var sessions = await _sessionRepository.GetActiveSessionsAsync(claims.UserId);
 
             // 3. EXTEND
-            await _sessionRepository.ExtendSessionAsync(claims.UserId, claims.SessionId, TimeSpan.FromHours(1));
+            await _sessionRepository.ExtendSessionAsync(claims.UserId, claims.SessionId);
 
             // 4. Map to DTO with HATEOAS
             var sessionDtos = sessions.Select(s => new SessionDto

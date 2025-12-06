@@ -72,7 +72,7 @@ namespace SessionManager.Api.Controllers
             }
 
             // 6. Extend Session (Heartbeat)
-            await _sessionRepository.ExtendSessionAsync(claims.UserId, claims.SessionId, TimeSpan.FromHours(1));
+            await _sessionRepository.ExtendSessionAsync(claims.UserId, claims.SessionId);
 
             // 7. Build HATEOAS Response
             var response = new SessionStatsResponse
