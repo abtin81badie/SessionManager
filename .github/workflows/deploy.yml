@@ -27,24 +27,29 @@ jobs:
       - name: SSH and Deploy
         uses: appleboy/ssh-action@master
         env:
-          # Map GitHub Secrets to environment variables for this step
+          # Map GitHub Secrets to environment variables
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           AES_KEY: ${{ secrets.AES_KEY }}
           ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-          # These can be hardcoded here or also stored in secrets if you prefer
+
+          # Standard Configuration
           JWT_ISSUER: "SessionManager"
           JWT_AUDIENCE: "SessionManagerClient"
           JWT_EXPIRY: "60"
           SESSION_MAX_CONCURRENT: "2"
           SESSION_TIMEOUT_MINUTES: "60"
+
+          # ---> NEW: Refresh Token Expiry (10080 mins = 7 Days) <---
+          REFRESH_TOKEN_EXPIRY_MINUTES: "10080"
+
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           password: ${{ secrets.PASSWORD }}
-          # Pass ALL variables to the script
-          envs: DB_PASSWORD,JWT_SECRET,AES_KEY,ADMIN_USERNAME,ADMIN_PASSWORD,JWT_ISSUER,JWT_AUDIENCE,JWT_EXPIRY,SESSION_MAX_CONCURRENT,SESSION_TIMEOUT_MINUTES
+          # Pass ALL variables to the script (Added REFRESH_TOKEN_EXPIRY_MINUTES)
+          envs: DB_PASSWORD,JWT_SECRET,AES_KEY,ADMIN_USERNAME,ADMIN_PASSWORD,JWT_ISSUER,JWT_AUDIENCE,JWT_EXPIRY,SESSION_MAX_CONCURRENT,SESSION_TIMEOUT_MINUTES,REFRESH_TOKEN_EXPIRY_MINUTES
           script: |
             cd /var/www/sessionmanager
 
@@ -66,6 +71,9 @@ jobs:
             # Session Settings
             echo "SESSION_MAX_CONCURRENT=$SESSION_MAX_CONCURRENT" >> .env
             echo "SESSION_TIMEOUT_MINUTES=$SESSION_TIMEOUT_MINUTES" >> .env
+
+            # ---> NEW: Write Refresh Token Expiry to .env <---
+            echo "REFRESH_TOKEN_EXPIRY_MINUTES=$REFRESH_TOKEN_EXPIRY_MINUTES" >> .env
             # ---------------------
 
             # Stop old containers
