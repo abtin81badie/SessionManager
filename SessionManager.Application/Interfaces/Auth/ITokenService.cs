@@ -1,9 +1,11 @@
-﻿using SessionManager.Domain.Entities;
+﻿using SessionManager.Application.Models;
+using SessionManager.Domain.Entities;
 
 namespace SessionManager.Application.Interfaces
 {
     public interface ITokenService
     {
-        string GenerateJwt(User user, string sessionId);
+        string GenerateJwt(TokenUserDto user, string sessionId);
+        string GenerateRefreshToken();
     }
 }

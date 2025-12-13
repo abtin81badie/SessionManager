@@ -1,4 +1,5 @@
 ﻿using SessionManager.Infrastructure.Options;
+using SessionManager.Application.Options;
 
 namespace SessionManager.Api.Mapper;
 
@@ -33,6 +34,9 @@ public static class OptionMapper
         // --- Session Mappings ---
         Map("SESSION_MAX_CONCURRENT", $"{SessionOptions.SectionName}:MaxConcurrentSessions");
         Map("SESSION_TIMEOUT_MINUTES", $"{SessionOptions.SectionName}:SessionTimeoutMinutes");
+
+        // --- Refresh Token Mapping ---
+        Map("REFRESH_TOKEN_EXPIRY_MINUTES", $"{RefreshTokenOptions.SectionName}:ExpiryMinutes");
     }
 
     private static void ConfigureDatabase(ConfigurationManager config)

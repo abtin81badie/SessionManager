@@ -1,10 +1,11 @@
 ﻿using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using SessionManager.Application.Interfaces; 
-using SessionManager.Domain.Entities;      
-using SessionManager.Infrastructure.Options; 
+using SessionManager.Application.Interfaces;
+using SessionManager.Application.Models;
+using SessionManager.Infrastructure.Options;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace SessionManager.Infrastructure.Services;
@@ -18,7 +19,7 @@ public class JwtService : ITokenService
         _jwtOptions = jwtOptions.Value;
     }
 
-    public string GenerateJwt(User user, string sessionId)
+    public string GenerateJwt(TokenUserDto user, string sessionId)
     {
         var tokenHandler = new JwtSecurityTokenHandler();
         var key = Encoding.ASCII.GetBytes(_jwtOptions.Secret);
@@ -34,12 +35,9 @@ public class JwtService : ITokenService
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
-
             Expires = DateTime.UtcNow.AddMinutes(_jwtOptions.ExpiryMinutes),
-
             Issuer = _jwtOptions.Issuer,
             Audience = _jwtOptions.Audience,
-
             SigningCredentials = new SigningCredentials(
                 new SymmetricSecurityKey(key),
                 SecurityAlgorithms.HmacSha256Signature
@@ -48,5 +46,22 @@ public class JwtService : ITokenService
 
         var token = tokenHandler.CreateToken(tokenDescriptor);
         return tokenHandler.WriteToken(token);
+    }
+
+    /// <summary>
+    /// Generates a cryptographically strong random string.
+    /// </summary>
+    public string GenerateRefreshToken()
+    {
+        // 32 bytes gives 256 bits of entropy, which is standard security practice.
+        var randomNumber = new byte[32];
+
+        using (var rng = RandomNumberGenerator.Create())
+        {
+            rng.GetBytes(randomNumber);
+
+            // Convert to Base64 to make it a storable string
+            return Convert.ToBase64String(randomNumber);
+        }
     }
 }

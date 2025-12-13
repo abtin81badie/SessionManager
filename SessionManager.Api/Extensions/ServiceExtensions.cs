@@ -6,6 +6,7 @@ using Microsoft.OpenApi.Models;
 using SessionManager.Application.Behaviors;
 using SessionManager.Application.Features.Auth.Login;
 using SessionManager.Application.Interfaces;
+using SessionManager.Application.Services;
 using SessionManager.Infrastructure.Options;
 using SessionManager.Infrastructure.Services;
 using System.Reflection;
@@ -42,6 +43,9 @@ namespace SessionManager.Api.Extensions
                 cfg.RegisterServicesFromAssemblyContaining<LoginCommandValidator>();
                 cfg.AddBehavior(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
             });
+
+            // Register System Seeder
+            services.AddScoped<ISystemSeedService, SystemSeedService>(); 
 
             return services;
         }
@@ -81,6 +85,7 @@ namespace SessionManager.Api.Extensions
             {
                 c.SwaggerDoc("v1", new OpenApiInfo { Title = "Session Manager API", Version = "v1" });
 
+                // 1. Define Access Token (Bearer)
                 c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
                 {
                     Name = "Authorization",
@@ -88,15 +93,32 @@ namespace SessionManager.Api.Extensions
                     Scheme = "Bearer",
                     BearerFormat = "JWT",
                     In = ParameterLocation.Header,
-                    Description = "Enter your valid token."
+                    Description = "Enter your expired Access Token here."
                 });
 
+                // 2. Define Refresh Token (Custom Header)
+                c.AddSecurityDefinition("RefreshToken", new OpenApiSecurityScheme
+                {
+                    Name = "X-Refresh-Token", // <--- The name of the header we will read
+                    Type = SecuritySchemeType.ApiKey, // ApiKey type allows custom headers
+                    In = ParameterLocation.Header,
+                    Description = "Enter your Refresh Token here."
+                });
+
+                // 3. Require Both in the UI
                 c.AddSecurityRequirement(new OpenApiSecurityRequirement
                 {
                     {
                         new OpenApiSecurityScheme
                         {
                             Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+                        },
+                        Array.Empty<string>()
+                    },
+                    {
+                        new OpenApiSecurityScheme
+                        {
+                            Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "RefreshToken" }
                         },
                         Array.Empty<string>()
                     }

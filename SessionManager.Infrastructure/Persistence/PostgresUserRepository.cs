@@ -1,10 +1,12 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using SessionManager.Application.Interfaces;
-using SessionManager.Domain.Entities;
+using SessionManager.Application.DTOs;       // Needed for Seeding DTO
+using SessionManager.Application.Interfaces; // Needed for Interfaces
+using SessionManager.Domain.Entities;        // Infrastructure is allowed to know Domain
+using SessionManager.Infrastructure.Persistence; // Needed for DbContext
 
-namespace SessionManager.Infrastructure.Persistence
+namespace SessionManager.Infrastructure.Repositories // Note: Usually in 'Repositories' folder, but keeping your namespace
 {
-    public class PostgresUserRepository : IUserRepository
+    public class PostgresUserRepository : IUserRepository, IUserProvisioningRepository
     {
         private readonly PostgresDbContext _context;
 
@@ -13,12 +15,15 @@ namespace SessionManager.Infrastructure.Persistence
             _context = context;
         }
 
+        // =========================================================
+        // IUserRepository Implementation (Standard Domain Logic)
+        // =========================================================
+
         public async Task<User?> GetByUsernameAsync(string username)
         {
-            // OPTIMIZATION: Use AsNoTracking() for read-only queries.
             return await _context.Users
-               .AsNoTracking()
-               .FirstOrDefaultAsync(u => u.Username == username);
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Username == username);
         }
 
         public async Task CreateUserAsync(User user)
@@ -36,6 +41,36 @@ namespace SessionManager.Infrastructure.Persistence
                 .AsNoTracking()
                 .Where(u => userIds.Contains(u.Id))
                 .ToListAsync();
+        }
+
+        public async Task<User?> GetUserByIdAsync(Guid userId)
+        {
+            return await _context.Users.FindAsync(userId);
+        }
+
+        // =========================================================
+        // IUserProvisioningRepository Implementation (Seeding Logic)
+        // =========================================================
+
+        public async Task<bool> ExistsByUsernameAsync(string username)
+        {
+            return await _context.Users.AnyAsync(u => u.Username == username);
+        }
+
+        public async Task CreateUserAsync(CreateAdminDto userDto)
+        {
+            // MAPPING: Map the DTO to the Domain Entity here in Infrastructure
+            var userEntity = new User
+            {
+                Id = Guid.NewGuid(),
+                Username = userDto.Username,
+                PasswordCipherText = userDto.PasswordCipherText,
+                PasswordIV = userDto.PasswordIV,
+                Role = userDto.Role
+            };
+
+            _context.Users.Add(userEntity);
+            await _context.SaveChangesAsync();
         }
     }
 }

@@ -4,7 +4,8 @@ namespace SessionManager.Application.Features.Auth.Login
 {
     public class LoginResult
     {
-        public string Token { get; set; } // The JWT
-        public User User { get; set; }    // The User entity (for further processing if needed)
+        public string Token { get; set; }
+        public string RefreshToken { get; set; }
+        public User User { get; set; } 
     }
 }

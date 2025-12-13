@@ -14,6 +14,7 @@
 	<ItemGroup>
 		<!-- Swagger -->
 		<PackageReference Include="DotNetEnv" Version="3.1.1" />
+		<PackageReference Include="Duende.IdentityServer" Version="7.4.3" />
 		<PackageReference Include="FluentValidation" Version="12.1.1" />
 		<PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
 		<PackageReference Include="MediatR" Version="14.0.0" />

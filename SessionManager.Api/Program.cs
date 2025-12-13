@@ -2,8 +2,8 @@ using DotNetEnv;
 using SessionManager.Api.Extensions;
 using SessionManager.Api.Mapper;
 using SessionManager.Api.Middleware;
+using SessionManager.Application.Interfaces;
 using SessionManager.Infrastructure;
-using SessionManager.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,10 +42,20 @@ builder.Services
     .AddInfrastructure(builder.Configuration)
     .AddApplicationLayer();
 
+
 var app = builder.Build();
 
 // --- 3. HTTP PIPELINE ---
-await DbInitializer.InitializeAsync(app.Services);
+
+// REPLACE DbInitializer with the new Service-based approach
+using (var scope = app.Services.CreateScope())
+{
+    // Get the service we just registered above
+    var seeder = scope.ServiceProvider.GetRequiredService<ISystemSeedService>();
+
+    // Run the seeding logic
+    await seeder.SeedAsync();
+}
 
 app.UseMiddleware<ExceptionMiddleware>();
 

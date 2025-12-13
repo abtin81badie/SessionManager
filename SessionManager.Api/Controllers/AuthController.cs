@@ -5,6 +5,8 @@ using SessionManager.Application.DTOs;
 using SessionManager.Application.Features.Auth.Login;
 using SessionManager.Application.Features.Auth.Logout;
 using SessionManager.Application.Interfaces;
+using SessionManager.Application.Features.Auth.RefreshToken;
+using SessionManager.Application.Interfaces;
 
 namespace SessionManager.Api.Controllers
 {
@@ -70,9 +72,11 @@ namespace SessionManager.Api.Controllers
             var response = new LoginResponse
             {
                 Token = result.Token,
+                RefreshToken = result.RefreshToken,
                 Links = new List<Link>
                 {
                     new Link("self", "/api/auth/login", "POST"),
+                    new Link("refresh_token", "/api/auth/refresh-token", "POST"),
                     new Link("renew", "/api/sessions/renew", "POST"),
                     new Link("logout", "/api/auth/logout", "DELETE"),
                     new Link("active_sessions", "/api/sessions", "GET")
@@ -80,6 +84,24 @@ namespace SessionManager.Api.Controllers
             };
 
             return Ok(response);
+        }
+
+        /// <summary>
+        /// Refreshes an expired Access Token using a valid Refresh Token.
+        /// </summary>
+        /// <param name="request">The expired Access Token and the valid Refresh Token.</param>
+        /// <returns>A new set of tokens.</returns>
+        /// <response code="200">Tokens refreshed successfully.</response>
+        /// <response code="401">Refresh token invalid or expired.</response>
+        [AllowAnonymous]
+        [ProducesResponseType(typeof(LoginResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [HttpPost("refresh-token")]
+        public async Task<IActionResult> RefreshToken()
+        {
+            // We send an empty command. The Handler pulls data from headers.
+            var result = await _mediator.Send(new RefreshTokenCommand());
+            return Ok(result);
         }
 
         /// <summary>

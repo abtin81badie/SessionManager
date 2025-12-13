@@ -1,6 +1,6 @@
 ﻿using MediatR;
-using SessionManager.Application.Features.Auth.Login;
 using SessionManager.Application.Interfaces;
+using SessionManager.Application.Models;
 using SessionManager.Domain.Entities;
 
 namespace SessionManager.Application.Features.Auth.Login
@@ -53,7 +53,18 @@ namespace SessionManager.Application.Features.Auth.Login
 
             // 2. Session Logic
             var sessionToken = Guid.NewGuid().ToString();
-            var jwt = _tokenService.GenerateJwt(user, sessionToken);
+
+            // Generate the Secure Refresh Token (Opaque String)
+            var refreshToken = _tokenService.GenerateRefreshToken();
+
+            var userDto = new TokenUserDto
+            {
+                Id = user.Id,
+                Username = user.Username,
+                Role = user.Role
+            };
+
+            var jwt = _tokenService.GenerateJwt(userDto, sessionToken);
 
             var sessionInfo = new SessionInfo
             {
@@ -66,7 +77,7 @@ namespace SessionManager.Application.Features.Auth.Login
 
             await _sessionRepository.CreateSessionAsync(user.Id, sessionInfo);
 
-            return new LoginResult { Token = jwt, User = user };
+            return new LoginResult { Token = jwt, RefreshToken = refreshToken ,User = user };
         }
     }
 }

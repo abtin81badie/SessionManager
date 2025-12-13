@@ -1,4 +1,4 @@
-﻿namespace SessionManager.Infrastructure.Options;
+﻿namespace SessionManager.Application.Options;
 
 public class AdminOptions
 {

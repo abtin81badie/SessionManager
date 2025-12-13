@@ -1,5 +1,4 @@
-﻿using MediatR; // Required for IRequestHandler
-using SessionManager.Application.Features.Auth.Logout;
+﻿using MediatR;
 using SessionManager.Application.Interfaces;
 
 namespace SessionManager.Application.Features.Auth.Logout
