@@ -13,7 +13,40 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v2
 
-      # 1. Copy all project files to the server
+      # ------------------------------------------------------------------
+      # STEP 1: STOP DOCKER & DELETE OLD FILES (The "Clean Slate")
+      # ------------------------------------------------------------------
+      - name: Stop App and Clean Server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          password: ${{ secrets.PASSWORD }}
+          script: |
+            # Check if the folder exists
+            if [ -d "/var/www/sessionmanager" ]; then
+              cd /var/www/sessionmanager
+              
+              # 1. Stop Containers (if docker-compose.yml exists)
+              if [ -f "docker-compose.yml" ]; then
+                echo "Stopping existing containers..."
+                docker-compose down || true
+              fi
+              
+              # 2. Leave the folder
+              cd ..
+              
+              # 3. DELETE EVERYTHING (The Nuclear Option)
+              echo "Deleting old files..."
+              rm -rf sessionmanager
+            fi
+
+            # 4. Recreate the empty folder for the new code
+            mkdir -p /var/www/sessionmanager
+
+      # ------------------------------------------------------------------
+      # STEP 2: COPY NEW FILES (Into the empty folder)
+      # ------------------------------------------------------------------
       - name: Copy files via SCP
         uses: appleboy/scp-action@master
         with:
@@ -23,64 +56,51 @@ jobs:
           source: "."
           target: "/var/www/sessionmanager"
 
-      # 2. SSH into server, create .env file, and restart Docker
+      # ------------------------------------------------------------------
+      # STEP 3: CONFIGURE & START (Fresh Deployment)
+      # ------------------------------------------------------------------
       - name: SSH and Deploy
         uses: appleboy/ssh-action@master
         env:
-          # Map GitHub Secrets to environment variables
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           AES_KEY: ${{ secrets.AES_KEY }}
           ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
 
-          # Standard Configuration
           JWT_ISSUER: "SessionManager"
           JWT_AUDIENCE: "SessionManagerClient"
           JWT_EXPIRY: "60"
           SESSION_MAX_CONCURRENT: "2"
           SESSION_TIMEOUT_MINUTES: "60"
-
-          # ---> NEW: Refresh Token Expiry (10080 mins = 7 Days) <---
-          REFRESH_TOKEN_EXPIRY_MINUTES: "10080"
+          REFRESH_TOKEN_EXPIRY_MINUTES: "10080" # 7 Days
 
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           password: ${{ secrets.PASSWORD }}
-          # Pass ALL variables to the script (Added REFRESH_TOKEN_EXPIRY_MINUTES)
           envs: DB_PASSWORD,JWT_SECRET,AES_KEY,ADMIN_USERNAME,ADMIN_PASSWORD,JWT_ISSUER,JWT_AUDIENCE,JWT_EXPIRY,SESSION_MAX_CONCURRENT,SESSION_TIMEOUT_MINUTES,REFRESH_TOKEN_EXPIRY_MINUTES
           script: |
             cd /var/www/sessionmanager
 
-            # --- SECURITY STEP ---
-            # Create/Overwrite the .env file on the server with ALL required variables
+            # --- GENERATE .ENV FILE ---
             echo "DB_PASSWORD=$DB_PASSWORD" > .env
-
-            # Security Keys
             echo "JWT_SECRET=$JWT_SECRET" >> .env
             echo "JWT_ISSUER=$JWT_ISSUER" >> .env
             echo "JWT_AUDIENCE=$JWT_AUDIENCE" >> .env
             echo "JWT_EXPIRY=$JWT_EXPIRY" >> .env
             echo "AES_KEY=$AES_KEY" >> .env
-
-            # Admin Credentials
             echo "ADMIN_USERNAME=$ADMIN_USERNAME" >> .env
             echo "ADMIN_PASSWORD=$ADMIN_PASSWORD" >> .env
-
-            # Session Settings
             echo "SESSION_MAX_CONCURRENT=$SESSION_MAX_CONCURRENT" >> .env
             echo "SESSION_TIMEOUT_MINUTES=$SESSION_TIMEOUT_MINUTES" >> .env
-
-            # ---> NEW: Write Refresh Token Expiry to .env <---
             echo "REFRESH_TOKEN_EXPIRY_MINUTES=$REFRESH_TOKEN_EXPIRY_MINUTES" >> .env
-            # ---------------------
+            # --------------------------
 
-            # Stop old containers
-            docker-compose down
-
-            # Start new containers (Docker will now read the complete .env file!)
+            # START DOCKER
+            # No need to 'down' here because we deleted the old containers in Step 1
+            echo "Starting new containers..."
             docker-compose up -d --build
 
-            # Clean up space
+            # Cleanup unused images
             docker image prune -f
