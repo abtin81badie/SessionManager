@@ -1,6 +1,7 @@
 ﻿using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SessionManager.Application.Common;
 using SessionManager.Application.DTOs;
 using SessionManager.Application.Features.Sessions.GetActive;
 using SessionManager.Application.Features.Sessions.Renew;
@@ -14,12 +15,12 @@ namespace SessionManager.Api.Controllers
     public class SessionsController : ControllerBase
     {
         private readonly IMediator _mediator;
-        private readonly ICurrentUserService _currentUserService;
+        private readonly UserSessionContext _userContext;
 
-        public SessionsController(IMediator mediator, ICurrentUserService currentUserService)
+        public SessionsController(IMediator mediator, UserSessionContext userContext)
         {
             _mediator = mediator;
-            _currentUserService = currentUserService;
+            _userContext = userContext;
         }
 
         /// <summary>
@@ -44,8 +45,8 @@ namespace SessionManager.Api.Controllers
             // 1. Create Command using Service (Decoupled from HTTP)
             var command = new RenewSessionCommand
             {
-                UserId = _currentUserService.UserId,
-                SessionId = _currentUserService.SessionId
+                UserId = _userContext.UserId,
+                SessionId = _userContext.SessionId
             };
 
             // 2. Dispatch
@@ -95,8 +96,8 @@ namespace SessionManager.Api.Controllers
             // 1. Create Query using Service
             var query = new GetActiveSessionsQuery
             {
-                UserId = _currentUserService.UserId,
-                CurrentSessionId = _currentUserService.SessionId
+                UserId = _userContext.UserId,
+                CurrentSessionId = _userContext.SessionId
             };
 
             // 2. Dispatch

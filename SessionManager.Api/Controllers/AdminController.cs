@@ -1,6 +1,7 @@
 ﻿using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SessionManager.Application.Common;
 using SessionManager.Application.DTOs;
 using SessionManager.Application.Features.Admin.GetStats;
 using SessionManager.Application.Interfaces;
@@ -13,12 +14,12 @@ namespace SessionManager.Api.Controllers
     public class AdminController : ControllerBase
     {
         private readonly IMediator _mediator;
-        private readonly ICurrentUserService _currentUserService;
+        private readonly UserSessionContext _userContext;
 
-        public AdminController(IMediator mediator, ICurrentUserService currentUserService)
+        public AdminController(IMediator mediator, UserSessionContext userContext)
         {
             _mediator = mediator;
-            _currentUserService = currentUserService;
+            _userContext = userContext;
         }
 
         /// <summary>
@@ -43,9 +44,9 @@ namespace SessionManager.Api.Controllers
             // 1. Create Query using Service (Decoupled from HTTP)
             var query = new GetSessionStatsQuery
             {
-                UserId = _currentUserService.UserId,
-                Role = _currentUserService.Role,
-                CurrentSessionId = _currentUserService.SessionId
+                UserId = _userContext.UserId,
+                Role = _userContext.Role,
+                CurrentSessionId = _userContext.SessionId
             };
 
             // 2. Dispatch

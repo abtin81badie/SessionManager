@@ -67,6 +67,7 @@ if (app.Environment.IsDevelopment())
 app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<UserSessionMiddleware>();
 app.MapControllers();
 
 app.Run();

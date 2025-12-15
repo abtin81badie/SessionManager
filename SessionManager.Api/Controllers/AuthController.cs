@@ -1,12 +1,11 @@
 ﻿using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using SessionManager.Application.Common; // Ensure this namespace exists for UserSessionContext
 using SessionManager.Application.DTOs;
 using SessionManager.Application.Features.Auth.Login;
 using SessionManager.Application.Features.Auth.Logout;
-using SessionManager.Application.Interfaces;
 using SessionManager.Application.Features.Auth.RefreshToken;
-using SessionManager.Application.Interfaces;
 
 namespace SessionManager.Api.Controllers
 {
@@ -20,13 +19,12 @@ namespace SessionManager.Api.Controllers
     public class AuthController : ControllerBase
     {
         private readonly IMediator _mediator;
-        private readonly ICurrentUserService _currentUserService;
+        private readonly UserSessionContext _userContext;
 
-        // Injected ICurrentUserService to decouple Claims/HTTP logic
-        public AuthController(IMediator mediator, ICurrentUserService currentUserService)
+        public AuthController(IMediator mediator, UserSessionContext userContext)
         {
             _mediator = mediator;
-            _currentUserService = currentUserService;
+            _userContext = userContext;
         }
 
         /// <summary>
@@ -108,7 +106,7 @@ namespace SessionManager.Api.Controllers
         /// Logs out a user by invalidating their specific session token.
         /// </summary>
         /// <remarks>
-        /// Sends a command to remove the session data from persistence.
+        /// Uses the UserSessionContext to identify which user and session to invalidate.
         /// </remarks>
         /// <returns>Success message.</returns>
         /// <response code="200">Session successfully deleted.</response>
@@ -121,18 +119,24 @@ namespace SessionManager.Api.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Logout()
         {
-            // 1. Extract Data using Service (Decoupled from HTTP Request)
-            // The ICurrentUserService reads the User Principal set by the middleware.
+            // 1. Validation (Safety Check)
+            // Even though [Authorize] is on top, checking the Context ensures the Middleware ran correctly.
+            if (!_userContext.IsAuthenticated)
+            {
+                return Unauthorized();
+            }
+
+            // 2. Extract Data using the Context (Already parsed by Middleware)
             var command = new LogoutCommand
             {
-                UserId = _currentUserService.UserId,
-                SessionId = _currentUserService.SessionId
+                UserId = _userContext.UserId,
+                SessionId = _userContext.SessionId
             };
 
-            // 2. Dispatch
+            // 3. Dispatch
             bool isDeleted = await _mediator.Send(command);
 
-            // 3. Return correct HTTP Status based on Result
+            // 4. Return correct HTTP Status based on Result
             if (!isDeleted)
             {
                 return NotFound(new { Message = "Session not found or already logged out." });

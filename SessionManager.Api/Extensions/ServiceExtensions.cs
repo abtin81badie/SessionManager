@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SessionManager.Application.Behaviors;
-using SessionManager.Application.Features.Auth.Login;
+using SessionManager.Application.Common;
 using SessionManager.Application.Interfaces;
 using SessionManager.Application.Services;
 using SessionManager.Infrastructure.Options;
@@ -27,7 +27,7 @@ namespace SessionManager.Api.Extensions
 
             // Context Accessors for CurrentUserService
             services.AddHttpContextAccessor();
-            services.AddScoped<ICurrentUserService, CurrentUserService>();
+            services.AddScoped<UserSessionContext>();
 
             return services;
         }
@@ -45,7 +45,7 @@ namespace SessionManager.Api.Extensions
             });
 
             // Register System Seeder
-            services.AddScoped<ISystemSeedService, SystemSeedService>(); 
+            services.AddScoped<ISystemSeedService, SystemSeedService>();
 
             return services;
         }

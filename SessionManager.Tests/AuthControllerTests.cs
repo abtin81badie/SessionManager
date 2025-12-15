@@ -2,14 +2,13 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using SessionManager.Application.Common; // Ensure this imports your UserSessionContext
 using SessionManager.Application.DTOs;
 using SessionManager.Application.Features.Auth.Login;
 using SessionManager.Application.Features.Auth.Logout;
 using SessionManager.Application.Features.Auth.RefreshToken;
-using SessionManager.Application.Interfaces;
-using SessionManager.Application.Interfaces;
 
-namespace SessionManager.Tests.Services
+namespace SessionManager.Api.Controllers
 {
     /// <summary>
     /// Manages User Authentication and Session Creation via CQRS.
@@ -21,13 +20,14 @@ namespace SessionManager.Tests.Services
     public class AuthController : ControllerBase
     {
         private readonly IMediator _mediator;
-        private readonly ICurrentUserService _currentUserService;
 
-        // Injected ICurrentUserService to decouple Claims/HTTP logic
-        public AuthController(IMediator mediator, ICurrentUserService currentUserService)
+        // REPLACEMENT: Injected UserSessionContext to access data populated by Middleware
+        private readonly UserSessionContext _userContext;
+
+        public AuthController(IMediator mediator, UserSessionContext userContext)
         {
             _mediator = mediator;
-            _currentUserService = currentUserService;
+            _userContext = userContext;
         }
 
         /// <summary>
@@ -122,18 +122,23 @@ namespace SessionManager.Tests.Services
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> Logout()
         {
-            // 1. Extract Data using Service (Decoupled from HTTP Request)
-            // The ICurrentUserService reads the User Principal set by the middleware.
+            // 1. Validation: Ensure the Middleware successfully parsed the token
+            if (!_userContext.IsAuthenticated)
+            {
+                return Unauthorized();
+            }
+
+            // 2. Extract Data using Context (Already populated by Middleware)
             var command = new LogoutCommand
             {
-                UserId = _currentUserService.UserId,
-                SessionId = _currentUserService.SessionId
+                UserId = _userContext.UserId,
+                SessionId = _userContext.SessionId
             };
 
-            // 2. Dispatch
+            // 3. Dispatch
             bool isDeleted = await _mediator.Send(command);
 
-            // 3. Return correct HTTP Status based on Result
+            // 4. Return correct HTTP Status based on Result
             if (!isDeleted)
             {
                 return NotFound(new { Message = "Session not found or already logged out." });

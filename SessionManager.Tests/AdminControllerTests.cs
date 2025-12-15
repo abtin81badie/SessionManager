@@ -1,14 +1,10 @@
 ﻿using MediatR;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using SessionManager.Api.Controllers;
+using SessionManager.Application.Common;
 using SessionManager.Application.DTOs;
 using SessionManager.Application.Features.Admin.GetStats;
-using SessionManager.Application.Interfaces;
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Xunit;
 
 namespace SessionManager.Tests
@@ -16,15 +12,18 @@ namespace SessionManager.Tests
     public class AdminControllerTests
     {
         private readonly Mock<IMediator> _mockMediator;
-        private readonly Mock<ICurrentUserService> _mockUserService;
+        private readonly UserSessionContext _userContext;
         private readonly AdminController _controller;
 
         public AdminControllerTests()
         {
             _mockMediator = new Mock<IMediator>();
-            _mockUserService = new Mock<ICurrentUserService>();
 
-            _controller = new AdminController(_mockMediator.Object, _mockUserService.Object);
+            // 1. Instantiate the context directly
+            _userContext = new UserSessionContext();
+
+            // 2. Inject the real context into the Controller
+            _controller = new AdminController(_mockMediator.Object, _userContext);
         }
 
         [Fact]
@@ -35,13 +34,13 @@ namespace SessionManager.Tests
             var sessionId = "test-session";
             var userRole = "Admin";
 
-            // 1. Mock the Service (Controller reads from here)
-            _mockUserService.Setup(x => x.UserId).Returns(userId);
-            _mockUserService.Setup(x => x.SessionId).Returns(sessionId);
-            _mockUserService.Setup(x => x.Role).Returns(userRole);
+            // 1. Setup Context Data (Simulating the Middleware)
+            _userContext.UserId = userId;
+            _userContext.SessionId = sessionId;
+            _userContext.Role = userRole;
+            _userContext.IsAuthenticated = true; // Important: Middleware sets this to true
 
             // 2. Mock Mediator Response
-            // FIX: Using 'SessionDetailDto' to match your class definition
             var statsDto = new SessionStatsDto
             {
                 TotalActiveSessions = 5,
@@ -71,10 +70,10 @@ namespace SessionManager.Tests
             var response = Assert.IsType<SessionStatsResponse>(okResult.Value);
 
             Assert.Equal(5, response.TotalActiveSessions);
-            Assert.Single(response.DetailedSessions); // Ensure the list has 1 item
-            Assert.Contains(response.Links, l => l.Rel == "self"); // Verify HATEOAS was added
+            Assert.Single(response.DetailedSessions);
+            Assert.Contains(response.Links, l => l.Rel == "self");
 
-            // Verify Query Construction
+            // Verify Query Construction: Ensure Controller passed data from _userContext correctly
             _mockMediator.Verify(x => x.Send(It.Is<GetSessionStatsQuery>(q =>
                 q.UserId == userId &&
                 q.Role == userRole &&
@@ -86,13 +85,14 @@ namespace SessionManager.Tests
         public async Task GetSessionStats_Should_ReturnUnauthorized_When_MediatorReturnsNull()
         {
             // Arrange
-            _mockUserService.Setup(x => x.UserId).Returns(Guid.NewGuid());
-            _mockUserService.Setup(x => x.Role).Returns("User");
-            _mockUserService.Setup(x => x.SessionId).Returns("expired-session");
+            _userContext.UserId = Guid.NewGuid();
+            _userContext.Role = "User";
+            _userContext.SessionId = "expired-session";
+            _userContext.IsAuthenticated = true;
 
-            // Mock Mediator returning NULL
+            // Mock Mediator returning NULL (simulating business logic failure)
             _mockMediator.Setup(x => x.Send(It.IsAny<GetSessionStatsQuery>(), default))
-                .ReturnsAsync((SessionStatsDto)null);
+                .ReturnsAsync((SessionStatsDto?)null);
 
             // Act
             var result = await _controller.GetSessionStats();
@@ -100,9 +100,9 @@ namespace SessionManager.Tests
             // Assert
             var unauthorizedResult = Assert.IsType<UnauthorizedObjectResult>(result);
 
-            // FIX: Use Reflection to get the 'Message' property from the anonymous object
+            // Reflection to get the 'Message' property from the anonymous object
             var value = unauthorizedResult.Value;
-            var messageProperty = value.GetType().GetProperty("Message");
+            var messageProperty = value?.GetType().GetProperty("Message");
             var messageValue = messageProperty?.GetValue(value, null) as string;
 
             Assert.Equal("Session expired or revoked.", messageValue);

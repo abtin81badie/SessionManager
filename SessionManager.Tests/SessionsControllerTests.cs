@@ -2,11 +2,11 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
-using SessionManager.Api.Controllers;
+using SessionManager.Api.Controllers; 
+using SessionManager.Application.Common;
 using SessionManager.Application.DTOs;
 using SessionManager.Application.Features.Sessions.GetActive;
 using SessionManager.Application.Features.Sessions.Renew;
-using SessionManager.Application.Interfaces;
 using Xunit;
 
 namespace SessionManager.Tests
@@ -14,15 +14,19 @@ namespace SessionManager.Tests
     public class SessionsControllerTests
     {
         private readonly Mock<IMediator> _mockMediator;
-        private readonly Mock<ICurrentUserService> _mockUserService;
+        // CHANGE: Use the real object, no Mock needed
+        private readonly UserSessionContext _userContext;
         private readonly SessionsController _controller;
 
         public SessionsControllerTests()
         {
             _mockMediator = new Mock<IMediator>();
-            _mockUserService = new Mock<ICurrentUserService>();
 
-            _controller = new SessionsController(_mockMediator.Object, _mockUserService.Object);
+            // 1. Instantiate the context directly
+            _userContext = new UserSessionContext();
+
+            // 2. Inject the real context
+            _controller = new SessionsController(_mockMediator.Object, _userContext);
         }
 
         // --- HELPER: Setup Header for "Echo" Response ---
@@ -49,9 +53,10 @@ namespace SessionManager.Tests
             var sessionId = Guid.NewGuid().ToString();
             var tokenString = "valid.jwt.token";
 
-            // 1. Mock the Current User Service (This replaces claims extraction)
-            _mockUserService.Setup(x => x.UserId).Returns(userId);
-            _mockUserService.Setup(x => x.SessionId).Returns(sessionId);
+            // 1. Setup Context Data (Simulating the Middleware)
+            _userContext.UserId = userId;
+            _userContext.SessionId = sessionId;
+            _userContext.IsAuthenticated = true;
 
             // 2. Setup Header (for the response echo only)
             SetupRequestHeader(tokenString);
@@ -70,7 +75,7 @@ namespace SessionManager.Tests
             Assert.Equal("Session renewed successfully.", response.Message);
             Assert.Equal(tokenString, response.Token); // Verify it extracted the header string
 
-            // Verify Mediator was called with correct IDs from Service
+            // Verify Mediator was called with correct IDs from Context
             _mockMediator.Verify(x => x.Send(It.Is<RenewSessionCommand>(c =>
                 c.UserId == userId &&
                 c.SessionId == sessionId), default), Times.Once);
@@ -80,8 +85,10 @@ namespace SessionManager.Tests
         public async Task RenewSession_Should_ReturnNotFound_When_MediatorReturnsFalse()
         {
             // Arrange
-            _mockUserService.Setup(x => x.UserId).Returns(Guid.NewGuid());
-            _mockUserService.Setup(x => x.SessionId).Returns("expired-session");
+            _userContext.UserId = Guid.NewGuid();
+            _userContext.SessionId = "expired-session";
+            _userContext.IsAuthenticated = true;
+
             SetupRequestHeader("token");
 
             // Mock Mediator Failure (Session not found or expired)
@@ -106,8 +113,9 @@ namespace SessionManager.Tests
             var userId = Guid.NewGuid();
             var currentSessionId = "session-1";
 
-            _mockUserService.Setup(x => x.UserId).Returns(userId);
-            _mockUserService.Setup(x => x.SessionId).Returns(currentSessionId);
+            _userContext.UserId = userId;
+            _userContext.SessionId = currentSessionId;
+            _userContext.IsAuthenticated = true;
 
             // Mock Data returned from Mediator
             var sessionsList = new List<SessionDto>
@@ -137,12 +145,13 @@ namespace SessionManager.Tests
         public async Task GetActiveSessions_Should_ReturnUnauthorized_When_MediatorReturnsNull()
         {
             // Arrange
-            _mockUserService.Setup(x => x.UserId).Returns(Guid.NewGuid());
-            _mockUserService.Setup(x => x.SessionId).Returns("revoked-session");
+            _userContext.UserId = Guid.NewGuid();
+            _userContext.SessionId = "revoked-session";
+            _userContext.IsAuthenticated = true;
 
             // Mock Mediator returning null (Indicates the current session is invalid/revoked)
             _mockMediator.Setup(x => x.Send(It.IsAny<GetActiveSessionsQuery>(), default))
-                .ReturnsAsync((IEnumerable<SessionDto>)null);
+                .ReturnsAsync((IEnumerable<SessionDto>?)null);
 
             // Act
             var result = await _controller.GetActiveSessions();
